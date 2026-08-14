@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Leaflet Custom DivIcon Reset for Clean Map Markers */
+.leaflet-div-icon,
+.custom-stop-pin,
+.custom-driver-pin {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Ensure full height map container and smooth viewport */
+#root, body, html {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom scrollbars for route sidebar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
