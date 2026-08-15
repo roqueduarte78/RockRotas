@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Sparkles,
@@ -23,6 +24,7 @@ import {
   ChevronRight,
   Zap,
   Volume2,
+  Compass,
 } from 'lucide-react';
 import { MapEngine, RouteStop, RouteSummary, MapThemeMode } from '../types';
 import { getFullRouteGoogleMapsUrl, exportCurrentRouteToExcel } from '../utils/routeOptimizer';
@@ -92,19 +94,6 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Close on outside click
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node) && isOpen) {
-        onClose();
-      }
-    };
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   const handleAction = (actionFn?: () => void) => {
@@ -114,21 +103,28 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
     }
   };
 
-  return (
+  const menuContent = (
     <div
       id="exclusive-action-menu-backdrop"
-      className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex justify-end animate-fadeIn"
+      className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-xs flex justify-end animate-fadeIn"
       role="dialog"
       aria-modal="true"
       aria-labelledby="menu-title"
+      onClick={(e) => {
+        // Close if clicking directly on backdrop
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
     >
       <div
         ref={menuRef}
         id="exclusive-action-menu-drawer"
-        className="w-full sm:w-96 max-w-full bg-slate-900 border-l border-slate-800 text-white h-full shadow-2xl flex flex-col justify-between overflow-hidden animate-slideLeft"
+        className="w-full sm:w-96 max-w-full bg-slate-900 border-l border-slate-800 text-white h-full shadow-2xl flex flex-col justify-between overflow-hidden animate-slideLeft relative z-10"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Menu Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 sticky top-0 z-10">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/95 sticky top-0 z-10">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-violet-600/20 text-violet-400 border border-violet-500/30">
               <SlidersHorizontal className="w-4 h-4" />
@@ -353,7 +349,7 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
             </div>
           </div>
 
-          {/* Section 4: Configurações do Mapa & Motor */}
+          {/* Section 4: Áudio, Voz & Sotaques */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">
               🎙️ Áudio, Voz & Sotaques PT-BR
@@ -385,12 +381,11 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
             )}
           </div>
 
-          {/* Section 5: Configurações do Mapa & Sistema */}
+          {/* Section 5: Configurações do Mapa & Motor */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">
               ⚙️ Configurações do Mapa & Motor
             </span>
-
 
             {/* Map Theme Toggle */}
             <div className="p-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl space-y-2">
@@ -464,7 +459,7 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
             </button>
           </div>
 
-          {/* Section 5: Recursos & Ajuda */}
+          {/* Section 6: Histórico & Ajuda */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">
               📖 Histórico & Ajuda
@@ -534,4 +529,6 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(menuContent, document.body) : menuContent;
 };

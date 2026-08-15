@@ -53,27 +53,59 @@ async function generateGeminiWithFallback(ai: any, contents: string, config?: an
   throw lastError || new Error("Todos os modelos Gemini estão indisponíveis no momento.");
 }
 const geocodeCache = new Map<string, any>();
+const placesCache = new Map<string, any>();
 let lastNominatimRequestTime = 0;
 
-app.get("/api/geocode", async (req, res) => {
+// Google Places & Geocode Autocomplete Endpoint
+app.get("/api/places/autocomplete", async (req, res) => {
   try {
-    const query = req.query.q as string;
-    if (!query) {
-      return res.status(400).json({ error: "Parâmetro 'q' é obrigatório" });
+    const input = (req.query.input as string) || (req.query.q as string);
+    if (!input || !input.trim()) {
+      return res.json([]);
     }
 
-    const normalizedQuery = query.toLowerCase().trim();
+    const query = input.trim();
+    const cacheKey = query.toLowerCase();
 
-    // 1. Check in-memory cache
-    if (geocodeCache.has(normalizedQuery)) {
-      return res.json(geocodeCache.get(normalizedQuery));
+    if (placesCache.has(cacheKey)) {
+      return res.json(placesCache.get(cacheKey));
     }
 
-    // 2. Throttle to ensure at least 800ms between calls to Nominatim
+    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.GOOGLE_MAPS_API_KEY;
+
+    // 1. Try Google Places Autocomplete if API key is provided
+    if (googleKey && googleKey !== "YOUR_API_KEY") {
+      try {
+        const googleUrl = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+          query
+        )}&key=${googleKey}&components=country:br&language=pt-BR`;
+
+        const gRes = await fetch(googleUrl);
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          if (gData.status === "OK" && Array.isArray(gData.predictions) && gData.predictions.length > 0) {
+            const results = gData.predictions.slice(0, 5).map((p: any) => ({
+              placeId: p.place_id,
+              description: p.description,
+              mainText: p.structured_formatting?.main_text || p.description.split(",")[0],
+              secondaryText: p.structured_formatting?.secondary_text || p.description.split(",").slice(1).join(",").trim(),
+              source: "google" as const,
+            }));
+
+            placesCache.set(cacheKey, results);
+            return res.json(results);
+          }
+        }
+      } catch (gErr) {
+        console.warn("Google Places API request failed, falling back to OSM:", gErr);
+      }
+    }
+
+    // 2. Fallback to OpenStreetMap Nominatim with rate-limiting
     const now = Date.now();
     const timeSinceLast = now - lastNominatimRequestTime;
-    if (timeSinceLast < 800) {
-      await new Promise((resolve) => setTimeout(resolve, 800 - timeSinceLast));
+    if (timeSinceLast < 600) {
+      await new Promise((resolve) => setTimeout(resolve, 600 - timeSinceLast));
     }
     lastNominatimRequestTime = Date.now();
 
@@ -88,24 +120,99 @@ app.get("/api/geocode", async (req, res) => {
       }
     );
 
-    if (response.status === 429) {
-      console.warn("Nominatim 429 Too Many Requests - returning empty response gracefully");
-      return res.json([]);
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        const results = data.map((item: any) => {
+          const parts = (item.display_name || "").split(",");
+          const mainText = parts[0] ? parts[0].trim() : query;
+          const secondaryText = parts.slice(1, 4).join(",").trim();
+
+          return {
+            placeId: `osm_${item.place_id || item.osm_id}`,
+            description: item.display_name,
+            mainText,
+            secondaryText: secondaryText || "Brasil",
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lon),
+            source: "osm" as const,
+          };
+        });
+
+        placesCache.set(cacheKey, results);
+        return res.json(results);
+      }
     }
 
-    if (!response.ok) {
-      console.warn(`Nominatim status error: ${response.status}`);
-      return res.json([]);
-    }
-
-    const data = await response.json();
-    if (Array.isArray(data)) {
-      geocodeCache.set(normalizedQuery, data);
-    }
-    return res.json(data);
-  } catch (error: any) {
-    console.warn("Geocode endpoint error (handled gracefully):", error?.message || error);
     return res.json([]);
+  } catch (error: any) {
+    console.warn("Places autocomplete error (handled gracefully):", error?.message || error);
+    return res.json([]);
+  }
+});
+
+// Google Places Details / Coordinate Resolver Endpoint
+app.get("/api/places/details", async (req, res) => {
+  try {
+    const placeId = req.query.place_id as string;
+    const address = req.query.address as string;
+
+    if (!placeId && !address) {
+      return res.status(400).json({ error: "place_id ou address é obrigatório" });
+    }
+
+    const googleKey = process.env.GOOGLE_MAPS_PLATFORM_KEY || process.env.GOOGLE_MAPS_API_KEY;
+
+    // If it's a Google Place ID and key exists
+    if (placeId && !placeId.startsWith("osm_") && googleKey && googleKey !== "YOUR_API_KEY") {
+      try {
+        const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=formatted_address,name,geometry&key=${googleKey}&language=pt-BR`;
+        const gRes = await fetch(detailsUrl);
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          if (gData.status === "OK" && gData.result?.geometry?.location) {
+            return res.json({
+              lat: gData.result.geometry.location.lat,
+              lng: gData.result.geometry.location.lng,
+              formattedAddress: gData.result.formatted_address || gData.result.name,
+              name: gData.result.name,
+              source: "google",
+            });
+          }
+        }
+      } catch (gErr) {
+        console.warn("Google Place Details failed:", gErr);
+      }
+    }
+
+    // Geocode fallback by address query
+    const queryAddress = address || placeId;
+    const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+      queryAddress
+    )}&limit=1&countrycodes=br`;
+
+    const response = await fetch(geocodeUrl, {
+      headers: {
+        "User-Agent": "OtimizadorDeRotasPro/1.0 (contact@rotaspro.app)",
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return res.json({
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon),
+          formattedAddress: data[0].display_name,
+          source: "osm",
+        });
+      }
+    }
+
+    return res.json({ error: "Local não encontrado", formattedAddress: queryAddress });
+  } catch (error: any) {
+    console.warn("Place details error:", error);
+    return res.status(500).json({ error: "Erro ao buscar detalhes da parada" });
   }
 });
 

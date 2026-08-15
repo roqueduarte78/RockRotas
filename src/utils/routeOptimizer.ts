@@ -33,6 +33,73 @@ export function estimateDrivingDurationMin(distanceKm: number): number {
   return Math.max(1, Math.round(driveMinutes));
 }
 
+export interface PlaceSuggestion {
+  placeId: string;
+  description: string;
+  mainText: string;
+  secondaryText: string;
+  lat?: number;
+  lng?: number;
+  source: 'google' | 'osm';
+}
+
+// Fetches real-time address / place suggestions from Google Places API (with OSM fallback)
+export async function fetchPlacesAutocomplete(
+  input: string
+): Promise<PlaceSuggestion[]> {
+  if (!input || input.trim().length < 2) return [];
+
+  try {
+    const res = await fetch(`/api/places/autocomplete?input=${encodeURIComponent(input.trim())}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Autocomplete fetch error:', err);
+  }
+
+  return [];
+}
+
+// Resolves exact coordinates and formatted address for a selected place
+export async function fetchPlaceDetails(
+  place: PlaceSuggestion
+): Promise<{ lat: number; lng: number; formattedAddress: string } | null> {
+  // If coordinates are already present in suggestion
+  if (place.lat !== undefined && place.lng !== undefined) {
+    return {
+      lat: place.lat,
+      lng: place.lng,
+      formattedAddress: place.description || place.mainText,
+    };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (place.placeId) params.append('place_id', place.placeId);
+    if (place.description) params.append('address', place.description);
+
+    const res = await fetch(`/api/places/details?${params.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
+        return {
+          lat: data.lat,
+          lng: data.lng,
+          formattedAddress: data.formattedAddress || place.description,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Place details fetch error:', err);
+  }
+
+  return geocodeAddress(place.description);
+}
+
 // Geocodes an address string using backend server proxy with caching and rate limiting
 export async function geocodeAddress(
   address: string
@@ -40,14 +107,14 @@ export async function geocodeAddress(
   if (!address || !address.trim()) return null;
 
   try {
-    const res = await fetch(`/api/geocode?q=${encodeURIComponent(address.trim())}`);
+    const res = await fetch(`/api/places/details?address=${encodeURIComponent(address.trim())}`);
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (data && typeof data.lat === 'number' && typeof data.lng === 'number') {
         return {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-          formattedAddress: data[0].display_name || address,
+          lat: data.lat,
+          lng: data.lng,
+          formattedAddress: data.formattedAddress || address,
         };
       }
     }
