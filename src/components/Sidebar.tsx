@@ -47,7 +47,11 @@ import {
   computeRoutePerformance,
 } from '../utils/routeOptimizer';
 import { generateRoutePdfReport } from '../utils/pdfGenerator';
-import { speakNextStopAnnouncement } from '../utils/voiceAnnouncement';
+import {
+  speakNextStopAnnouncement,
+  getSavedVoiceConfig,
+  VOICE_PERSONAS,
+} from '../utils/voiceAnnouncement';
 import { useBatteryStatus } from '../hooks/useBatteryStatus';
 
 interface SidebarProps {
@@ -63,6 +67,7 @@ interface SidebarProps {
   onOpenGeminiModal: () => void;
   onOpenExcelImport: () => void;
   onOpenHistoryModal?: () => void;
+  onOpenVoiceModal?: () => void;
   onUpdateStopStatus: (id: string, status: RouteStop['status']) => void;
   routeSummary: RouteSummary;
   driverLocation?: DriverLocation | null;
@@ -96,6 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenGeminiModal,
   onOpenExcelImport,
   onOpenHistoryModal,
+  onOpenVoiceModal,
   onUpdateStopStatus,
   routeSummary,
   driverLocation,
@@ -548,26 +554,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
 
-            {/* Web Speech Voice Test */}
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-200 block">Anúncios por Voz (Web Speech)</span>
-                <span className="text-[10px] text-slate-400">Anuncia próxima parada no viva-voz</span>
+            {/* Web Speech Voice & Regional Accents */}
+            <div className="pt-2.5 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-200 block text-xs">Voz & Sotaques PT-BR</span>
+                  <span className="text-[10px] text-slate-400">
+                    Sotaque ativo:{' '}
+                    <strong className="text-violet-300 font-extrabold">
+                      {(() => {
+                        const vConfig = getSavedVoiceConfig();
+                        const p = VOICE_PERSONAS.find((item) => item.id === vConfig.persona);
+                        return p ? `${p.name} ${p.emoji}` : 'Feminino 👩‍💼';
+                      })()}
+                    </strong>
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-gradient-to-r from-violet-600 to-pink-600 text-white">
+                  9 Opções
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const firstPending = stops.find((s) => s.status === 'pendente' || s.status === 'em_transito');
-                  speakNextStopAnnouncement(
-                    firstPending?.customerName || 'Cliente Teste',
-                    firstPending?.address || 'Avenida Paulista, 1000'
-                  );
-                }}
-                className="px-2.5 py-1.5 bg-violet-600 hover:bg-violet-500 text-white font-extrabold rounded-xl text-[11px] flex items-center gap-1 transition-all shrink-0"
-              >
-                <Volume2 className="w-3.5 h-3.5" />
-                Testar Voz
-              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                {onOpenVoiceModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenVoiceModal}
+                    className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold rounded-xl text-[11px] flex items-center justify-center gap-1.5 border border-slate-700 transition-all shadow-xs hover:border-violet-500/50"
+                  >
+                    <Volume2 className="w-3.5 h-3.5 text-violet-400" />
+                    <span>Mudar Sotaque</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstPending = stops.find(
+                      (s) => s.status === 'pendente' || s.status === 'em_transito'
+                    );
+                    speakNextStopAnnouncement(
+                      firstPending?.customerName || 'Cliente Exemplo',
+                      firstPending?.address || 'Av. Paulista, 1000'
+                    );
+                  }}
+                  className="py-1.5 px-2.5 bg-violet-600 hover:bg-violet-500 text-white font-extrabold rounded-xl text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                >
+                  <Volume2 className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Testar Áudio</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

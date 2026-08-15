@@ -24,6 +24,7 @@ import { EditStopModal } from './components/EditStopModal';
 import { RouteHistoryModal } from './components/RouteHistoryModal';
 import { FullMapModal } from './components/FullMapModal';
 import { QuickGuideModal } from './components/QuickGuideModal';
+import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 
 // Sample initial Brazilian delivery stops fallback
 const INITIAL_STOPS: RouteStop[] = [
@@ -194,6 +195,7 @@ export default function App() {
   const [isGoogleKeyModalOpen, setIsGoogleKeyModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [isQuickGuideOpen, setIsQuickGuideOpen] = useState<boolean>(() => {
     try {
       const hasSeen = localStorage.getItem('ROTA_EXPRESS_HAS_SEEN_GUIDE');
@@ -556,6 +558,7 @@ export default function App() {
         onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
         onOpenFullMap={() => setIsFullMapOpen(true)}
         onOpenQuickGuide={() => setIsQuickGuideOpen(true)}
+        onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
         stops={stops}
         routeSummary={routeSummary}
         onResetRoute={handleResetRoute}
@@ -621,6 +624,7 @@ export default function App() {
           onOpenGeminiModal={() => setIsGeminiModalOpen(true)}
           onOpenExcelImport={() => setIsExcelModalOpen(true)}
           onOpenHistoryModal={() => setIsHistoryModalOpen(true)}
+          onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
           onUpdateStopStatus={handleUpdateStopStatus}
           routeSummary={routeSummary}
           driverLocation={driverLocation}
@@ -717,6 +721,11 @@ export default function App() {
       <QuickGuideModal
         isOpen={isQuickGuideOpen}
         onClose={() => setIsQuickGuideOpen(false)}
+      />
+
+      <VoiceSettingsModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
       />
 
       {/* Confirmation Modal for Cancel or New Route */}

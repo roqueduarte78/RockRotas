@@ -96,6 +96,17 @@ export function useMapThemeSchedule(): MapThemeScheduleState {
     return isNightTime; // 'auto'
   }, [mapThemeMode, isNightTime]);
 
+  // Synchronize HTML element dark class for entire application interface
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      if (isDarkModeMap) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  }, [isDarkModeMap]);
+
   // Setter with persistence
   const setMapThemeMode = useCallback((mode: MapThemeMode) => {
     setMapThemeModeState(mode);

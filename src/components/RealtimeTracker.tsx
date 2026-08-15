@@ -27,6 +27,12 @@ import {
   estimateDrivingDurationMin,
 } from '../utils/routeOptimizer';
 import { generateRoutePdfReport } from '../utils/pdfGenerator';
+import {
+  speakNextStopAnnouncement,
+  speakText,
+  formatStopCompletedPhrase,
+  getSavedVoiceConfig,
+} from '../utils/voiceAnnouncement';
 
 interface RealtimeTrackerProps {
   stops: RouteStop[];
@@ -183,6 +189,20 @@ export const RealtimeTracker: React.FC<RealtimeTrackerProps> = ({
 
       playAlertChime();
 
+      // Trigger automatic voice announcement according to active voice persona
+      try {
+        const vConfig = getSavedVoiceConfig();
+        if (vConfig.enabled && vConfig.autoAnnounceNextStop) {
+          speakNextStopAnnouncement(
+            currentTargetStop.customerName,
+            currentTargetStop.address,
+            currentTargetStop.notes
+          );
+        }
+      } catch (err) {
+        console.warn('Voice announcement trigger failed:', err);
+      }
+
       // Trigger Push Notification if allowed
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('📍 Aproximando-se da Parada!', {
@@ -194,6 +214,22 @@ export const RealtimeTracker: React.FC<RealtimeTrackerProps> = ({
 
   const handleCompleteTargetStop = () => {
     if (currentTargetStop) {
+      const nextStop = pendingStops[1];
+      try {
+        const vConfig = getSavedVoiceConfig();
+        if (vConfig.enabled && vConfig.autoAnnounceNextStop && nextStop) {
+          const phrase = formatStopCompletedPhrase(
+            vConfig.persona,
+            currentTargetStop.customerName,
+            nextStop.customerName,
+            nextStop.address
+          );
+          speakText(phrase, { persona: vConfig.persona });
+        }
+      } catch (err) {
+        console.warn('Completion voice announcement failed:', err);
+      }
+
       onUpdateStopStatus(currentTargetStop.id, 'concluido');
       setProximityAlert(null);
     }

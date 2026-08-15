@@ -437,36 +437,36 @@ export const MapView: React.FC<MapViewProps> = ({
       )}
 
       {/* Floating Map Info Overlay & Controls */}
-      <div className="absolute top-4 left-4 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 p-3 rounded-2xl shadow-xl flex items-center justify-between gap-3 max-w-md">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 via-fuchsia-600 to-pink-500 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-fuchsia-500/20">
-            <MapPin className="w-4 h-4" />
+      <div className="absolute top-4 left-3 sm:left-4 z-20 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 dark:border-slate-800 p-2.5 sm:p-3 rounded-2xl shadow-xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 max-w-[calc(100vw-1.5rem)] sm:max-w-xl">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-violet-600 via-fuchsia-600 to-pink-500 text-white flex items-center justify-center font-bold text-xs shadow-md shadow-fuchsia-500/20 shrink-0">
+            <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h4 className="font-extrabold text-xs text-slate-900 dark:text-white">
-                {mapEngine === 'google' ? 'Google Maps Engine' : 'OpenStreetMap Engine'}
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 truncate">
+              <h4 className="font-extrabold text-[11px] sm:text-xs text-slate-900 dark:text-white truncate">
+                {mapEngine === 'google' ? 'Google Maps' : 'OpenStreetMap'}
               </h4>
               {isOnline ? (
-                <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  <Wifi className="w-3 h-3 text-emerald-600" />
+                <span className="flex items-center gap-1 text-[9px] sm:text-[10px] text-emerald-600 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                  <Wifi className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600" />
                   Online
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-[10px] text-amber-600 font-extrabold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  <WifiOff className="w-3 h-3 text-amber-600" />
-                  Sombra / Offline
+                <span className="flex items-center gap-1 text-[9px] sm:text-[10px] text-amber-600 font-extrabold bg-amber-50 px-1.5 py-0.5 rounded-full border border-amber-200 shrink-0">
+                  <WifiOff className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-600" />
+                  Offline
                 </span>
               )}
             </div>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+            <p className="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
               {stops.length} paradas no trajeto
             </p>
           </div>
         </div>
 
         {/* Fullscreen, Night Mode & Offline Cache Controls */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto">
           {/* Fullscreen API Toggle Button for Android, iOS & Desktop */}
           <button
             onClick={toggleFullscreen}

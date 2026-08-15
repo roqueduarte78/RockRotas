@@ -24,6 +24,38 @@ export interface AppSettings {
   autoWeatherAlerts: boolean;
 }
 
+export type VoicePersona =
+  | 'feminino'
+  | 'masculino'
+  | 'baiano'
+  | 'carioca'
+  | 'cuiabano'
+  | 'humor'
+  | 'mineiro'
+  | 'gaucho'
+  | 'paulista';
+
+export interface VoicePersonaInfo {
+  id: VoicePersona;
+  name: string;
+  region: string;
+  tagline: string;
+  emoji: string;
+  samplePhrase: string;
+  defaultPitch: number;
+  defaultRate: number;
+}
+
+export interface VoiceConfig {
+  persona: VoicePersona;
+  enabled: boolean;
+  autoAnnounceNextStop: boolean;
+  rate: number;
+  pitch: number;
+  volume: number;
+  voiceURI?: string;
+}
+
 export interface RouteStop {
   id: string;
   address: string;
