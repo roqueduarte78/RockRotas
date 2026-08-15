@@ -271,7 +271,6 @@ Responda ESTRITAMENTE em formato JSON com uma lista de objetos:
       });
     } catch (genErr: any) {
       console.warn("Gemini API error in validate-addresses (handling gracefully):", genErr?.message || genErr);
-      // Fallback: Return raw list cleanly structured so frontend continues without crashing
       const fallbackResults = items.map((it: any) => {
         const addrStr = typeof it === "string" ? it : it.originalAddress || it.address || "";
         return {
@@ -300,6 +299,104 @@ Responda ESTRITAMENTE em formato JSON com uma lista de objetos:
       error: error.message || "Erro ao validar endereços com IA",
       fallback: true,
     });
+  }
+});
+
+// Gemini PDF / Delivery Document Structured Parser Endpoint
+app.post("/api/gemini/parse-document", async (req, res) => {
+  try {
+    const { documentText, documentName } = req.body;
+    const ai = getGenAI();
+
+    if (!documentText || typeof documentText !== "string" || !documentText.trim()) {
+      return res.status(400).json({ error: "Texto do documento está vazio." });
+    }
+
+    if (!ai) {
+      return res.json({
+        success: false,
+        error: "Chave GEMINI_API_KEY não configurada.",
+        fallback: true,
+        stops: [],
+      });
+    }
+
+    const prompt = `Você é um especialista em logística, romaneios de entrega, notas fiscais e manifestos de transporte no Brasil.
+Analise o texto extraído do documento PDF/Romaneio "${documentName || 'Documento de Entregas'}" abaixo e extraia TODAS as entregas/paradas com TODOS os seus dados e metadados.
+
+REGRA CRÍTICA DE AGRUPAMENTO DE PACOTES:
+- Se houver mais de um pacote/item/encomenda/NF para o MESMO ENDEREÇO (mesma rua, número, cidade), você DEVE AGRUPÁ-LOS EM UMA ÚNICA PARADA.
+- Na parada agrupada, coloque no array "packageNumbers" TODOS os números de pacotes/volumes/rastreios/NFs correspondentes.
+- Defina "packagesCount" como a quantidade total de pacotes para aquele endereço.
+- Se houver múltiplos destinatários no mesmo endereço, combine os nomes (ex: "João / Maria").
+- Combine as observações.
+
+Texto bruto do documento:
+\`\`\`
+${documentText.slice(0, 30000)}
+\`\`\`
+
+Instruções de Extração:
+1. Extraia o endereço completo formatado: "Logradouro, Número - Bairro, Cidade - UF, CEP"
+2. Extraia o nome do destinatário / cliente.
+3. Extraia o telefone / WhatsApp se houver.
+4. Extraia números de pacotes, códigos de rastreio, notas fiscais ou etiquetas no campo "packageNumbers" (array de strings).
+5. Defina "packagesCount" (número inteiro).
+6. Extraia observações, instruções de entrega, portaria, código de portão ou complementos em "notes".
+7. Determine a prioridade ("alta", "normal", "baixa").
+
+Responda ESTRITAMENTE em formato JSON com o seguinte formato:
+{
+  "routeName": "Nome sugerido para o itinerário",
+  "detectedCity": "Cidade principal identificada",
+  "detectedState": "UF principal identificada (ex: SP)",
+  "totalExtractedPackages": 10,
+  "stops": [
+    {
+      "address": "Av. Paulista, 1000 - Bela Vista, São Paulo - SP, 01310-100",
+      "customerName": "Maria Silva",
+      "phone": "11999998888",
+      "packageNumbers": ["#PKG-8821", "#PKG-8822"],
+      "packagesCount": 2,
+      "notes": "Entregar no 12º andar na recepção",
+      "neighborhood": "Bela Vista",
+      "city": "São Paulo",
+      "state": "SP",
+      "cep": "01310-100",
+      "priority": "alta",
+      "timeWindow": "09:00 - 12:00"
+    }
+  ]
+}`;
+
+    let responseText = "";
+    try {
+      responseText = await generateGeminiWithFallback(ai, prompt, {
+        responseMimeType: "application/json",
+      });
+    } catch (genErr: any) {
+      console.warn("Gemini API error in parse-document:", genErr?.message || genErr);
+      return res.json({ success: false, fallback: true, error: "Falha na análise por IA do documento." });
+    }
+
+    let parsedData: any = {};
+    try {
+      parsedData = JSON.parse(responseText || "{}");
+    } catch (e) {
+      console.warn("Error parsing Gemini parse-document response:", e);
+    }
+
+    return res.json({
+      success: true,
+      routeName: parsedData.routeName || documentName,
+      detectedCity: parsedData.detectedCity,
+      detectedState: parsedData.detectedState,
+      totalExtractedPackages: parsedData.totalExtractedPackages,
+      stops: Array.isArray(parsedData.stops) ? parsedData.stops : [],
+    });
+  } catch (error: any) {
+    console.error("Document parser error:", error);
+    return res.status(500).json({ error: "Erro ao processar documento PDF" });
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -25,16 +25,20 @@ import {
   Zap,
   Volume2,
   Compass,
+  Share2,
+  Check,
 } from 'lucide-react';
 import { MapEngine, RouteStop, RouteSummary, MapThemeMode } from '../types';
 import { getFullRouteGoogleMapsUrl, exportCurrentRouteToExcel } from '../utils/routeOptimizer';
 import { generateRoutePdfReport } from '../utils/pdfGenerator';
 import { useBatteryStatus } from '../hooks/useBatteryStatus';
+import { shareRouteNative } from '../utils/shareUtils';
 
 interface HeaderActionMenuProps {
   isOpen: boolean;
   onClose: () => void;
   stops: RouteStop[];
+  routeName?: string;
   routeSummary?: RouteSummary;
   mapEngine: MapEngine;
   setMapEngine: (engine: MapEngine) => void;
@@ -59,6 +63,7 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
   isOpen,
   onClose,
   stops,
+  routeName = 'Minha Rota de Entregas',
   routeSummary,
   mapEngine,
   setMapEngine,
@@ -82,6 +87,7 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
   const battery = useBatteryStatus();
   const activeStopsCount = stops.length;
   const fullGoogleMapsRouteUrl = getFullRouteGoogleMapsUrl(stops);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -101,6 +107,15 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
       actionFn();
       onClose();
     }
+  };
+
+  const handleShare = async () => {
+    const result = await shareRouteNative(routeName, stops, routeSummary);
+    setShareFeedback(result.message);
+    setTimeout(() => {
+      setShareFeedback(null);
+      onClose();
+    }, 2000);
   };
 
   const menuContent = (
@@ -150,12 +165,45 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
 
         {/* Menu Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+          {/* Share Feedback Toast inside Menu */}
+          {shareFeedback && (
+            <div className="p-3 bg-emerald-950/90 border border-emerald-500/60 rounded-xl text-emerald-200 text-xs font-bold flex items-center gap-2 animate-bounce">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{shareFeedback}</span>
+            </div>
+          )}
+
           {/* Section 1: Gestão da Rota */}
           <div className="space-y-1.5">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider px-1">
               📍 Gestão da Rota
             </span>
             <div className="grid grid-cols-1 gap-1.5">
+              {/* Native Share Route Button */}
+              {activeStopsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  className="w-full p-2.5 bg-gradient-to-r from-emerald-600/20 via-teal-600/20 to-cyan-600/20 hover:from-emerald-600/30 hover:to-cyan-600/30 border border-emerald-500/40 rounded-xl text-left transition-all flex items-center justify-between group shadow-xs"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-sm">
+                      <Share2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-extrabold text-emerald-200 group-hover:text-white flex items-center gap-1.5">
+                        Compartilhar Rota
+                        <span className="text-[9px] bg-emerald-500/40 text-emerald-100 px-1.5 py-0.2 rounded font-black">
+                          Link / WhatsApp
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">Enviar link com itinerário e mapa completo</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </button>
+              )}
+
               {onCreateNewRoute && (
                 <button
                   type="button"
@@ -290,10 +338,13 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
                     <FileSpreadsheet className="w-4 h-4" />
                   </div>
                   <div>
-                    <div className="text-xs font-extrabold text-white group-hover:text-emerald-300">
-                      Importar Planilha (Excel / CSV)
+                    <div className="text-xs font-extrabold text-white group-hover:text-emerald-300 flex items-center gap-1.5">
+                      <span>Importar Romaneios / Listas</span>
+                      <span className="text-[9px] bg-emerald-500/30 text-emerald-300 px-1 rounded font-bold">
+                        XLSX / CSV / PDF
+                      </span>
                     </div>
-                    <div className="text-[10px] text-slate-400">Carregar endereços de arquivos .xlsx/.csv</div>
+                    <div className="text-[10px] text-slate-400">Carregar de Excel, CSV ou documentos PDF com IA</div>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
@@ -317,7 +368,7 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
                         <div className="text-xs font-extrabold text-white group-hover:text-teal-300">
                           Exportar Planilha Excel (.xlsx)
                         </div>
-                        <div className="text-[10px] text-slate-400">Baixar rota otimizada e dados das paradas</div>
+                        <div className="text-[10px] text-slate-400">Baixar rota otimizada e pacotes agrupados</div>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
@@ -532,3 +583,4 @@ export const HeaderActionMenu: React.FC<HeaderActionMenuProps> = ({
 
   return typeof document !== 'undefined' ? createPortal(menuContent, document.body) : menuContent;
 };
+

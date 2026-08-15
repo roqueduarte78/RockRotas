@@ -10,7 +10,9 @@ import {
   Sparkles,
   CheckCircle2,
   MapPin,
-  HelpCircle,
+  Package,
+  Layers,
+  FileText,
 } from 'lucide-react';
 import { RouteStop, RouteSummary } from '../types';
 import {
@@ -22,6 +24,7 @@ import {
   getUfFromCep,
   getUfFromLatLng,
 } from '../utils/routeOptimizer';
+import { parsePdfDocumentFile } from '../utils/pdfParser';
 
 const BRAZIL_UFS = [
   'SP', 'RJ', 'MG', 'PR', 'RS', 'SC', 'BA', 'PE', 'CE', 'GO', 'ES', 'DF',
@@ -51,12 +54,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
   const [isValidatingGemini, setIsValidatingGemini] = useState(false);
   const [geminiValidated, setGeminiValidated] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<'excel' | 'pdf' | 'csv' | null>(null);
   const [customRouteName, setCustomRouteName] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [totalPackagesCount, setTotalPackagesCount] = useState<number>(0);
 
   // State verification status
   const [detectedState, setDetectedState] = useState<string | null>(null);
-  const [detectedSource, setDetectedSource] = useState<'planilha' | 'cep' | 'latlng' | 'manual' | null>(null);
+  const [detectedSource, setDetectedSource] = useState<'planilha' | 'pdf' | 'cep' | 'latlng' | 'manual' | null>(null);
   const [selectedManualUf, setSelectedManualUf] = useState<string>('SP');
   const [selectedManualCity, setSelectedManualCity] = useState<string>('');
 
@@ -71,29 +76,57 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     setFileName(file.name);
     setGeminiValidated(false);
 
+    const isPdf = file.name.toLowerCase().endsWith('.pdf');
+    const isCsv = file.name.toLowerCase().endsWith('.csv');
+    setFileType(isPdf ? 'pdf' : isCsv ? 'csv' : 'excel');
+
     // Extract filename without extension for route name suggestion
     const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '').replace(/[_]/g, ' ');
     setCustomRouteName(nameWithoutExt);
 
     try {
-      const items = await parseSpreadsheetFile(file);
-      if (items.length === 0) {
-        throw new Error('Nenhum endereço válido foi identificado na planilha.');
+      let items: Partial<RouteStop>[] = [];
+      let autoDetectedUf: string | null = null;
+      let autoDetectedCity: string | null = null;
+
+      if (isPdf) {
+        // Parse PDF file using pdfjs-dist and AI document extractor
+        const pdfResult = await parsePdfDocumentFile(file);
+        items = pdfResult.stops;
+        if (pdfResult.routeName) setCustomRouteName(pdfResult.routeName);
+        if (pdfResult.detectedState) autoDetectedUf = pdfResult.detectedState;
+        if (pdfResult.detectedCity) autoDetectedCity = pdfResult.detectedCity;
+      } else {
+        // Parse Excel (.xlsx, .xls) / CSV
+        items = await parseSpreadsheetFile(file);
       }
 
-      // Step 1: Check if spreadsheet explicitly has state/UF
-      let foundState: string | null = null;
-      let source: 'planilha' | 'cep' | 'latlng' | 'manual' | null = null;
+      if (items.length === 0) {
+        throw new Error('Nenhum endereço válido foi identificado no arquivo.');
+      }
 
-      for (const item of items) {
-        if (item.state && item.state.trim()) {
-          foundState = item.state.trim().toUpperCase();
-          source = 'planilha';
-          break;
+      // Calculate total packages
+      const totalPkgs = items.reduce((sum, item) => {
+        const count = item.packagesCount ?? (item.packageNumbers?.length || 1);
+        return sum + count;
+      }, 0);
+      setTotalPackagesCount(totalPkgs);
+
+      // Step 1: Check if file explicitly has state/UF
+      let foundState: string | null = autoDetectedUf || null;
+      let source: 'planilha' | 'pdf' | 'cep' | 'latlng' | 'manual' | null = isPdf && autoDetectedUf ? 'pdf' : null;
+
+      if (!foundState) {
+        for (const item of items) {
+          if (item.state && item.state.trim()) {
+            foundState = item.state.trim().toUpperCase();
+            source = isPdf ? 'pdf' : 'planilha';
+            break;
+          }
         }
       }
 
-      // Step 2: If no state in spreadsheet, check CEP
+      // Step 2: If no state in file, check CEP
       if (!foundState) {
         for (const item of items) {
           const ufCep = getUfFromCep(item.cep);
@@ -117,6 +150,10 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         }
       }
 
+      if (autoDetectedCity) {
+        setSelectedManualCity(autoDetectedCity);
+      }
+
       // Update state tracking
       setDetectedState(foundState);
       setDetectedSource(source);
@@ -126,6 +163,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         const updated = items.map((it) => ({
           ...it,
           state: it.state || foundState || undefined,
+          city: it.city || autoDetectedCity || undefined,
         }));
         setParsedPreview(updated);
       } else {
@@ -133,7 +171,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
       }
     } catch (err: any) {
       console.error('File import error:', err);
-      setErrorMsg(err.message || 'Erro ao ler arquivo Excel/CSV.');
+      setErrorMsg(err.message || 'Erro ao processar arquivo selecionado.');
     } finally {
       setIsLoading(false);
     }
@@ -261,6 +299,11 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
         priority: item.priority || 'normal',
         lat,
         lng,
+        packageNumbers: item.packageNumbers,
+        packageNumber: item.packageNumber,
+        packagesCount: item.packagesCount ?? (item.packageNumbers?.length || 1),
+        packageLocation: item.packageLocation,
+        gateCode: item.gateCode,
         status: 'pendente',
       });
     }
@@ -273,7 +316,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
+      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
         {/* Header */}
         <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-indigo-800/40">
           <div className="flex items-center gap-3">
@@ -281,11 +324,14 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               <FileSpreadsheet className="w-5 h-5 text-slate-950" />
             </div>
             <div>
-              <h3 className="font-extrabold text-lg leading-tight">
-                Gestão de Planilhas Excel (.XLSX / CSV)
+              <h3 className="font-extrabold text-lg leading-tight flex items-center gap-2">
+                <span>Importar Listas & Romaneios</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/10 text-emerald-300 font-mono">
+                  XLSX / CSV / PDF
+                </span>
               </h3>
               <p className="text-xs text-slate-400 font-medium">
-                Importe ou exporte a lista completa de entregas com dados geográficos
+                Importe romaneios, NFs ou planilhas. Agrupa automaticamente múltiplos pacotes no mesmo endereço.
               </p>
             </div>
           </div>
@@ -307,7 +353,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                   📊 Rota Atual Otimizada ({currentStops.length} paradas)
                 </span>
                 <p className="text-xs text-blue-800 font-medium mt-0.5">
-                  Baixe a planilha com ordem otimizada, cidade, CEP, distâncias e horários.
+                  Baixe a planilha com pacotes, ordem otimizada, cidade, CEP e horários.
                 </p>
               </div>
               <button
@@ -323,8 +369,8 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           {/* Sample file download */}
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs">
             <div>
-              <span className="font-bold text-emerald-900 block">Modelo Completo em Branco</span>
-              <span className="text-emerald-700">Com colunas para Endereço, Cidade, Bairro, CEP e Estado.</span>
+              <span className="font-bold text-emerald-900 block">Modelo Completo em Branco (.XLSX)</span>
+              <span className="text-emerald-700">Com colunas para Endereço, Pacotes, Volumes, Bairro, CEP e Cliente.</span>
             </div>
             <button
               onClick={downloadSampleExcel}
@@ -339,16 +385,19 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
           <div className="border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl p-6 text-center transition-all bg-slate-50 relative">
             <input
               type="file"
-              accept=".xlsx, .xls, .csv"
+              accept=".xlsx, .xls, .csv, .pdf, application/pdf"
               onChange={handleFileUpload}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
-            <Upload className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <Upload className="w-7 h-7 text-blue-600" />
+              <FileText className="w-7 h-7 text-rose-500" />
+            </div>
             <h4 className="font-bold text-sm text-slate-800 mb-1">
-              {fileName ? fileName : 'Clique ou arraste sua planilha aqui'}
+              {fileName ? fileName : 'Clique ou arraste seu arquivo Excel, CSV ou PDF aqui'}
             </h4>
             <p className="text-xs text-slate-500">
-              Suporta: Endereço, Bairro, Cidade, Estado, CEP, Cliente, Telefone, Observações.
+              Formatos aceitos: <strong>.xlsx, .xls, .csv, .pdf</strong> (Romaneios, Manifestos, Notas Fiscais e Planilhas).
             </p>
           </div>
 
@@ -366,7 +415,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
               <div className="p-3 bg-violet-50/80 border border-violet-200 rounded-2xl space-y-1">
                 <label className="text-xs font-bold text-violet-950 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-violet-600" />
-                  Nome da Rota (sugerido a partir do arquivo):
+                  Nome da Rota (sugerido a partir do documento):
                 </label>
                 <input
                   type="text"
@@ -377,9 +426,25 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 />
               </div>
 
+              {/* Package Summary Badge */}
+              <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-2xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-indigo-600" />
+                  <span className="font-bold text-indigo-950">
+                    Total de Pacotes / Volumes extraídos: <strong className="text-indigo-700">{totalPackagesCount}</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-indigo-800 font-medium">
+                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{parsedPreview.length} Paradas Únicas</span>
+                </div>
+              </div>
+
               {/* Geographic State / UF Detection & Manual Prompt Bar */}
               <div className={`p-3.5 rounded-2xl border text-xs space-y-2 ${
                 detectedSource === 'planilha'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  : detectedSource === 'pdf'
                   ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
                   : detectedSource === 'cep'
                   ? 'bg-blue-50 border-blue-200 text-blue-950'
@@ -392,17 +457,18 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                     <MapPin className="w-4 h-4 text-violet-600 shrink-0" />
                     <span>
                       {detectedSource === 'planilha' && `✓ Estado (UF) identificado na Planilha: ${detectedState}`}
+                      {detectedSource === 'pdf' && `✓ Estado (UF) identificado no Documento PDF: ${detectedState}`}
                       {detectedSource === 'cep' && `✓ Estado (UF) identificado automaticamente pelo CEP: ${detectedState}`}
                       {detectedSource === 'latlng' && `✓ Estado (UF) identificado pelas Coordenadas: ${detectedState}`}
                       {detectedSource === 'manual' && `✓ Estado (UF) definido manualmente: ${detectedState}`}
-                      {!detectedSource && `⚠️ Estado (UF) não encontrado na planilha, CEP ou coordenadas.`}
+                      {!detectedSource && `⚠️ Estado (UF) não encontrado no arquivo, CEP ou coordenadas.`}
                     </span>
                   </div>
                 </div>
 
                 {(!detectedSource || detectedSource === 'manual') && (
                   <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
-                    A planilha não continha coluna de Estado/UF nem CEPs/coordenadas mapeáveis. Por favor, selecione abaixo o Estado (UF) das entregas para garantir que os endereços sejam localizados com precisão no mapa:
+                    O documento não continha coluna explícita de Estado/UF. Selecione abaixo o Estado (UF) das entregas para garantir que os endereços sejam localizados com precisão:
                   </p>
                 )}
 
@@ -428,7 +494,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                       type="text"
                       value={selectedManualCity}
                       onChange={(e) => handleApplyManualState(detectedState || selectedManualUf, e.target.value)}
-                      placeholder="Ex: Rio de Janeiro, Campinas"
+                      placeholder="Ex: Rio de Janeiro, São Paulo"
                       className="w-full px-2.5 py-1 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-violet-500 outline-none"
                     />
                   </div>
@@ -437,7 +503,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
 
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-                  Pré-visualização ({parsedPreview.length} paradas identificadas)
+                  Pré-visualização ({parsedPreview.length} paradas consolidadas)
                 </h4>
 
                 <button
@@ -468,25 +534,65 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 </button>
               </div>
 
-              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-2xl p-2 bg-slate-50">
-                {parsedPreview.map((item, idx) => (
-                  <div key={idx} className="p-2 bg-white rounded-xl border border-slate-200 text-xs">
-                    <p className="font-bold text-slate-800">
-                      {idx + 1}. {item.address}
-                    </p>
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-500 text-[11px] mt-0.5">
-                      {item.customerName && <span>Cliente: {item.customerName}</span>}
-                      {item.phone && <span>Tel: {item.phone}</span>}
-                      {(item.city || item.state || detectedState) && (
-                        <span>
-                          Local: {item.city ? `${item.city} ` : ''}
-                          ({item.state || detectedState || selectedManualUf})
-                        </span>
+              <div className="max-h-56 overflow-y-auto space-y-2 border border-slate-200 rounded-2xl p-2 bg-slate-50">
+                {parsedPreview.map((item, idx) => {
+                  const pkgCount = item.packagesCount ?? (item.packageNumbers?.length || 1);
+                  const isMultiPackage = pkgCount > 1 || (item.packageNumbers && item.packageNumbers.length > 1);
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border text-xs transition-all ${
+                        isMultiPackage
+                          ? 'bg-amber-50/60 border-amber-200'
+                          : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="font-bold text-slate-800 leading-tight">
+                          {idx + 1}. {item.address}
+                        </p>
+                        {isMultiPackage && (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 font-extrabold text-[10px] rounded-full shrink-0 flex items-center gap-1">
+                            <Layers className="w-3 h-3 text-amber-700" />
+                            {pkgCount} PACOTES AGRUPADOS
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Package numbers pills */}
+                      {item.packageNumbers && item.packageNumbers.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className="text-[10px] font-bold text-indigo-700 flex items-center gap-1">
+                            <Package className="w-3 h-3 text-indigo-600" />
+                            Pacotes:
+                          </span>
+                          {item.packageNumbers.map((pkg, pIdx) => (
+                            <span
+                              key={pIdx}
+                              className="px-1.5 py-0.5 bg-indigo-100 text-indigo-900 font-mono text-[10px] font-bold rounded-md"
+                            >
+                              {pkg}
+                            </span>
+                          ))}
+                        </div>
                       )}
-                      {item.cep && <span>CEP: {item.cep}</span>}
+
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-500 text-[11px] mt-1">
+                        {item.customerName && <span>👤 Cliente: {item.customerName}</span>}
+                        {item.phone && <span>📞 Tel: {item.phone}</span>}
+                        {(item.city || item.state || detectedState) && (
+                          <span>
+                            📍 {item.city ? `${item.city} ` : ''}
+                            ({item.state || detectedState || selectedManualUf})
+                          </span>
+                        )}
+                        {item.cep && <span>CEP: {item.cep}</span>}
+                        {item.notes && <span className="text-amber-700 font-medium">📝 {item.notes}</span>}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <button
@@ -502,7 +608,7 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
                 ) : (
                   <>
                     <ListPlus className="w-4 h-4" />
-                    <span>Adicionar Paradas à Rota Otimizada</span>
+                    <span>Adicionar {parsedPreview.length} Paradas ({totalPackagesCount} Pacotes) à Rota</span>
                   </>
                 )}
               </button>
@@ -513,3 +619,4 @@ export const ExcelImportModal: React.FC<ExcelImportModalProps> = ({
     </div>
   );
 };
+

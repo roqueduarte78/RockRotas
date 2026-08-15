@@ -670,6 +670,8 @@ export default function App() {
       <FullMapModal
         isOpen={isFullMapOpen}
         stops={stops}
+        routeName={routeName}
+        routeSummary={routeSummary}
         driverLocation={driverLocation}
         isDarkModeMap={isDarkModeMap}
         mapThemeMode={mapThemeMode}

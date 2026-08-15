@@ -60,6 +60,7 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
   const [gateCode, setGateCode] = useState<string>('');
   const [packageLocation, setPackageLocation] = useState<string>('');
   const [packagesCount, setPackagesCount] = useState<number>(1);
+  const [packageNumbersStr, setPackageNumbersStr] = useState<string>('');
   const [stopOrderType, setStopOrderType] = useState<'primeira' | 'automatica' | 'ultima'>('automatica');
   const [serviceType, setServiceType] = useState<'entrega' | 'coleta'>('entrega');
   const [arrivalTimeWindow, setArrivalTimeWindow] = useState<string>('Qualquer momento');
@@ -84,7 +85,8 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
       setColorTag(stop.colorTag || 'Laranja');
       setGateCode(stop.gateCode || '');
       setPackageLocation(stop.packageLocation || '');
-      setPackagesCount(stop.packagesCount ?? 1);
+      setPackagesCount(stop.packagesCount ?? (stop.packageNumbers?.length || 1));
+      setPackageNumbersStr(stop.packageNumbers?.join(', ') || '');
       setStopOrderType(stop.stopOrderType || 'automatica');
       setServiceType(stop.serviceType || 'entrega');
       setArrivalTimeWindow(stop.arrivalTimeWindow || 'Qualquer momento');
@@ -176,6 +178,11 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
       }
     }
 
+    const parsedPackageNumbers = packageNumbersStr
+      .split(/[,;\n]+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
     const updated: RouteStop = {
       ...stop,
       address: finalAddress,
@@ -189,7 +196,8 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
       colorTag,
       gateCode: gateCode.trim() || undefined,
       packageLocation: packageLocation.trim() || undefined,
-      packagesCount,
+      packagesCount: Math.max(packagesCount, parsedPackageNumbers.length || 1),
+      packageNumbers: parsedPackageNumbers.length > 0 ? parsedPackageNumbers : undefined,
       stopOrderType,
       serviceType,
       arrivalTimeWindow,
@@ -293,28 +301,44 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
               />
             </div>
 
-            {/* Packages count [- 1 +] */}
-            <div className="flex items-center justify-between gap-3 pt-3">
-              <label className="text-xs font-extrabold text-slate-800 flex items-center gap-2">
-                <Package className="w-4 h-4 text-slate-500" />
-                Pacotes
-              </label>
-              <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setPackagesCount(Math.max(1, packagesCount - 1))}
-                  className="p-1.5 hover:bg-slate-200 text-slate-700 transition-colors"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="px-3 text-xs font-black text-slate-900">{packagesCount}</span>
-                <button
-                  type="button"
-                  onClick={() => setPackagesCount(packagesCount + 1)}
-                  className="p-1.5 hover:bg-slate-200 text-slate-700 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+            {/* Packages count [- 1 +] and Package Numbers */}
+            <div className="pt-3 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-extrabold text-slate-800 flex items-center gap-2">
+                  <Package className="w-4 h-4 text-slate-500" />
+                  Quantidade de Pacotes
+                </label>
+                <div className="flex items-center bg-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setPackagesCount(Math.max(1, packagesCount - 1))}
+                    className="p-1.5 hover:bg-slate-200 text-slate-700 transition-colors"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="px-3 text-xs font-black text-slate-900">{packagesCount}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPackagesCount(packagesCount + 1)}
+                    className="p-1.5 hover:bg-slate-200 text-slate-700 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Package Numbers / Codes */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 mb-1 block">
+                  Números / Códigos dos Pacotes (separados por vírgula):
+                </label>
+                <input
+                  type="text"
+                  value={packageNumbersStr}
+                  onChange={(e) => setPackageNumbersStr(e.target.value)}
+                  placeholder="Ex: PKG-001, PKG-002, 108492"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-mono font-bold text-indigo-700 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
             </div>
 

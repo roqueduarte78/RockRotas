@@ -235,6 +235,7 @@ export const Header: React.FC<HeaderProps> = ({
         isOpen={isActionMenuOpen}
         onClose={() => setIsActionMenuOpen(false)}
         stops={stops}
+        routeName={routeName}
         routeSummary={routeSummary}
         mapEngine={mapEngine}
         setMapEngine={setMapEngine}

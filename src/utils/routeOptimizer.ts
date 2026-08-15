@@ -445,7 +445,126 @@ export function getWhatsAppUrl(phone?: string, text?: string): string {
   return `https://wa.me/${cleanPhone}?text=${encodedText}`;
 }
 
-// Parse Spreadsheet (XLSX / CSV) extracting city, state, cep, neighborhood
+/**
+ * Normalizes an address string for deduplication and grouping
+ */
+export function normalizeAddressForGrouping(address?: string, city?: string, cep?: string): string {
+  if (!address) return '';
+  let norm = address.toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/^(?:rua|r\.|av\.|avenida|alameda|al\.|travessa|tv\.|praca|pc\.|estrada|estr\.|rodovia|rod\.)\s+/i, '')
+    .replace(/[^\w\s\d]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cep) {
+    const cleanCep = cep.replace(/\D/g, '');
+    if (cleanCep.length >= 8) norm += `_cep_${cleanCep}`;
+  }
+  if (city) {
+    norm += `_city_${city.toLowerCase().trim()}`;
+  }
+  return norm;
+}
+
+/**
+ * Groups multiple stops sharing the same address into a single consolidated stop,
+ * aggregating all package numbers, recipient names, and notes.
+ */
+export function groupStopsBySameAddress(stops: Partial<RouteStop>[]): Partial<RouteStop>[] {
+  const groupedMap = new Map<string, Partial<RouteStop>>();
+
+  stops.forEach((stop) => {
+    if (!stop.address || stop.address === 'Endereço não especificado') return;
+
+    // Use exact coordinate key if available, otherwise normalized address string
+    let groupKey = '';
+    if (stop.lat !== undefined && stop.lng !== undefined) {
+      groupKey = `coord_${stop.lat.toFixed(5)}_${stop.lng.toFixed(5)}`;
+    } else {
+      groupKey = `addr_${normalizeAddressForGrouping(stop.address, stop.city, stop.cep)}`;
+    }
+
+    if (!groupedMap.has(groupKey)) {
+      // First stop for this location
+      const initialPackages = Array.isArray(stop.packageNumbers)
+        ? [...stop.packageNumbers]
+        : stop.packageNumber
+        ? [stop.packageNumber]
+        : [];
+
+      groupedMap.set(groupKey, {
+        ...stop,
+        packageNumbers: initialPackages,
+        packagesCount: initialPackages.length > 0 ? initialPackages.length : (stop.packagesCount ?? 1),
+      });
+    } else {
+      // Merge with existing stop at same address
+      const existing = groupedMap.get(groupKey)!;
+
+      // 1. Combine package numbers (no duplicates)
+      const currentPackages = new Set<string>(existing.packageNumbers || []);
+      if (Array.isArray(stop.packageNumbers)) {
+        stop.packageNumbers.forEach((p) => p && currentPackages.add(String(p).trim()));
+      }
+      if (stop.packageNumber) {
+        currentPackages.add(String(stop.packageNumber).trim());
+      }
+      const combinedPackagesList = Array.from(currentPackages);
+
+      // 2. Combine customer names
+      let combinedCustomer = existing.customerName || '';
+      if (stop.customerName && !combinedCustomer.toLowerCase().includes(stop.customerName.toLowerCase())) {
+        combinedCustomer = combinedCustomer
+          ? `${combinedCustomer} / ${stop.customerName}`
+          : stop.customerName;
+      }
+
+      // 3. Combine notes
+      let combinedNotes = existing.notes || '';
+      if (stop.notes && !combinedNotes.toLowerCase().includes(stop.notes.toLowerCase())) {
+        combinedNotes = combinedNotes ? `${combinedNotes} | ${stop.notes}` : stop.notes;
+      }
+
+      // 4. Combine phones
+      let combinedPhone = existing.phone || stop.phone;
+      if (stop.phone && existing.phone && !existing.phone.includes(stop.phone)) {
+        combinedPhone = `${existing.phone}, ${stop.phone}`;
+      }
+
+      // 5. Higher priority wins
+      const priority =
+        existing.priority === 'alta' || stop.priority === 'alta'
+          ? 'alta'
+          : existing.priority === 'baixa' && stop.priority === 'baixa'
+          ? 'baixa'
+          : 'normal';
+
+      // 6. Packages count
+      const totalPackages =
+        combinedPackagesList.length > 0
+          ? combinedPackagesList.length
+          : (existing.packagesCount || 1) + (stop.packagesCount || 1);
+
+      groupedMap.set(groupKey, {
+        ...existing,
+        customerName: combinedCustomer || undefined,
+        notes: combinedNotes || undefined,
+        phone: combinedPhone || undefined,
+        priority,
+        packageNumbers: combinedPackagesList,
+        packagesCount: totalPackages,
+        packageLocation: existing.packageLocation || stop.packageLocation,
+        gateCode: existing.gateCode || stop.gateCode,
+      });
+    }
+  });
+
+  return Array.from(groupedMap.values());
+}
+
+// Parse Spreadsheet (XLSX / CSV) extracting city, state, cep, neighborhood, and package metadata
 export async function parseSpreadsheetFile(file: File): Promise<Partial<RouteStop>[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -457,7 +576,7 @@ export async function parseSpreadsheetFile(file: File): Promise<Partial<RouteSto
         const worksheet = workbook.Sheets[firstSheetName];
         const json: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
-        const parsedStops: Partial<RouteStop>[] = json
+        const rawStops: Partial<RouteStop>[] = json
           .map((row) => {
             const keys = Object.keys(row);
             const findValue = (...names: string[]) => {
@@ -474,11 +593,52 @@ export async function parseSpreadsheetFile(file: File): Promise<Partial<RouteSto
             const neighborhood = findValue('bairro', 'neighborhood', 'suburb');
             const customerName = findValue('cliente', 'nome', 'customer', 'destinatario', 'recebedor');
             const phone = findValue('telefone', 'celular', 'phone', 'whatsapp', 'contato');
-            const notes = findValue('observacao', 'observações', 'obs', 'notas', 'nota');
+            const notes = findValue('observacao', 'observações', 'obs', 'notas', 'nota', 'complemento');
             const priorityVal = findValue('prioridade', 'priority');
             const timeWindow = findValue('horario', 'janela', 'hora', 'time');
             const latStr = findValue('latitude', 'lat');
             const lngStr = findValue('longitude', 'lng', 'lon');
+
+            // Package numbers & volumes columns
+            const rawPackage = findValue(
+              'pacote',
+              'pacotes',
+              'número do pacote',
+              'numero pacote',
+              'n_pacote',
+              'num_pacote',
+              'tracking',
+              'rastreio',
+              'codigo_rastreio',
+              'etiqueta',
+              'volume',
+              'volumes',
+              'id_pacote',
+              'encomenda',
+              'nf',
+              'nota_fiscal',
+              'remessa',
+              'pedido'
+            );
+
+            const countStr = findValue('qtd_pacotes', 'qtd_volumes', 'quantidade', 'volumes_total');
+
+            // Parse package numbers array
+            const packageNumbers: string[] = [];
+            if (rawPackage) {
+              const splits = rawPackage.split(/[,;\/|\n]+/).map((s) => s.trim()).filter(Boolean);
+              splits.forEach((pkg) => {
+                const formatted = pkg.startsWith('#') ? pkg : `#${pkg}`;
+                if (!packageNumbers.includes(formatted)) {
+                  packageNumbers.push(formatted);
+                }
+              });
+            }
+
+            let packagesCount = packageNumbers.length > 0 ? packageNumbers.length : 1;
+            if (countStr && !isNaN(parseInt(countStr, 10)) && parseInt(countStr, 10) > 0) {
+              packagesCount = Math.max(packagesCount, parseInt(countStr, 10));
+            }
 
             let priority: 'alta' | 'normal' | 'baixa' = 'normal';
             if (
@@ -520,12 +680,16 @@ export async function parseSpreadsheetFile(file: File): Promise<Partial<RouteSto
               timeWindow: timeWindow || undefined,
               lat,
               lng,
+              packageNumbers: packageNumbers.length > 0 ? packageNumbers : undefined,
+              packagesCount,
               status: 'pendente' as const,
             };
           })
           .filter((s) => s.address && s.address !== 'Endereço não especificado');
 
-        resolve(parsedStops);
+        // Automatically group stops with identical address into a single stop
+        const groupedStops = groupStopsBySameAddress(rawStops);
+        resolve(groupedStops);
       } catch (err) {
         reject(err);
       }
@@ -546,8 +710,24 @@ export function downloadSampleExcel() {
       CEP: '01310-100',
       Cliente: 'Ana Silva',
       Telefone: '11999998888',
+      'Número do Pacote': '#PKG-8821',
+      'Qtd Pacotes': 1,
       Observações: 'Entregar na recepção comercial',
       Prioridade: 'Alta',
+      Horário: '09:00 - 12:00',
+    },
+    {
+      Endereço: 'Av. Paulista, 1000',
+      Bairro: 'Bela Vista',
+      Cidade: 'São Paulo',
+      Estado: 'SP',
+      CEP: '01310-100',
+      Cliente: 'Bruno Santos',
+      Telefone: '11999998888',
+      'Número do Pacote': '#PKG-8822',
+      'Qtd Pacotes': 1,
+      Observações: 'Mesmo endereço - agrupado como única parada',
+      Prioridade: 'Normal',
       Horário: '09:00 - 12:00',
     },
     {
@@ -558,6 +738,8 @@ export function downloadSampleExcel() {
       CEP: '01305-100',
       Cliente: 'Carlos Eduardo',
       Telefone: '11988887777',
+      'Número do Pacote': '#PKG-9045, #PKG-9046',
+      'Qtd Pacotes': 2,
       Observações: 'Deixar com o porteiro Sr. João',
       Prioridade: 'Normal',
       Horário: '13:00 - 17:00',
@@ -570,6 +752,8 @@ export function downloadSampleExcel() {
       CEP: '01451-000',
       Cliente: 'Tech Solutions Ltda',
       Telefone: '11977776666',
+      'Número do Pacote': '#NF-10294',
+      'Qtd Pacotes': 1,
       Observações: 'Recebimento no 5º andar',
       Prioridade: 'Normal',
       Horário: '10:00 - 16:00',
@@ -660,6 +844,8 @@ export function exportCurrentRouteToExcel(stops: RouteStop[], summary?: RouteSum
       CEP: stop.cep || '-',
       Cliente: stop.customerName || '',
       Telefone: stop.phone || '',
+      'Pacotes / Rastreio': stop.packageNumbers && stop.packageNumbers.length > 0 ? stop.packageNumbers.join(', ') : (stop.packageNumber || ''),
+      'Qtd Pacotes': stop.packagesCount ?? (stop.packageNumbers?.length || 1),
       Observações: stop.notes || '',
       Prioridade: (stop.priority || 'normal').toUpperCase(),
       Status: statusText,

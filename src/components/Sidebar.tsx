@@ -31,6 +31,8 @@ import {
   X,
   ExternalLink,
   Navigation,
+  Package,
+  Boxes,
 } from 'lucide-react';
 import { RouteStop, RouteSummary, DriverLocation, GpsApp, MapThemeMode } from '../types';
 import {
@@ -795,11 +797,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   href={defaultNavUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-slate-600 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 block line-clamp-2 leading-relaxed mb-2 transition-colors font-medium"
+                  className="text-xs text-slate-600 dark:text-slate-300 hover:text-violet-600 dark:hover:text-violet-400 block line-clamp-2 leading-relaxed mb-1.5 transition-colors font-medium"
                   title={`Abrir navegação em ${defaultGpsApp === 'waze' ? 'Waze' : 'Google Maps'}`}
                 >
                   {stop.address}
                 </a>
+
+                {/* Package Numbers & Grouping Info */}
+                {((stop.packagesCount && stop.packagesCount > 1) || (stop.packageNumbers && stop.packageNumbers.length > 0)) && (
+                  <div className="mb-2 p-1.5 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                        <Package className="w-3 h-3 text-indigo-500" />
+                        <span>
+                          {stop.packagesCount && stop.packagesCount > 1
+                            ? `${stop.packagesCount} pacotes agrupados neste endereço`
+                            : 'Pacote associado'}
+                        </span>
+                      </span>
+                    </div>
+
+                    {stop.packageNumbers && stop.packageNumbers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-0.5">
+                        {stop.packageNumbers.map((pkgNum, pIdx) => (
+                          <span
+                            key={pIdx}
+                            className="px-1.5 py-0.2 bg-white dark:bg-indigo-900/90 text-indigo-900 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700 rounded-md font-mono text-[9px] font-bold shadow-2xs"
+                          >
+                            {pkgNum}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Adverse Weather Alert if any */}
                 {stop.weather?.isAdverse && (

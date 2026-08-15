@@ -1,28 +1,32 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { RouteStop, DriverLocation, MapThemeMode } from '../types';
+import { RouteStop, DriverLocation, MapThemeMode, RouteSummary } from '../types';
 import {
   X,
   MapPin,
-  Search,
   Maximize2,
   Moon,
   Sun,
   Edit3,
   RefreshCw,
   Check,
-  Navigation,
-  User,
-  Phone,
   AlertCircle,
   Move,
   Layers,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Share2,
+  Package,
+  Boxes,
 } from 'lucide-react';
 import { getWazeUrl, getGoogleMapsUrl, geocodeAddress } from '../utils/routeOptimizer';
+import { shareRouteNative } from '../utils/shareUtils';
 
 interface FullMapModalProps {
   isOpen: boolean;
   stops: RouteStop[];
+  routeName?: string;
+  routeSummary?: RouteSummary;
   driverLocation?: DriverLocation | null;
   isDarkModeMap?: boolean;
   mapThemeMode?: MapThemeMode;
@@ -37,6 +41,8 @@ interface FullMapModalProps {
 export const FullMapModal: React.FC<FullMapModalProps> = ({
   isOpen,
   stops,
+  routeName = 'Minha Rota de Entregas',
+  routeSummary,
   driverLocation,
   isDarkModeMap = false,
   mapThemeMode = 'auto',
@@ -64,21 +70,20 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
     : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-  // Selected stop object
-  const selectedStop = stops.find((s) => s.id === selectedStopId) || null;
-
-  // Handle ResizeObserver & map invalidation on open
+  // Handle cleanup when modal closes so it can re-open cleanly without Leaflet container collisions
   useEffect(() => {
-    if (!isOpen || !mapContainerRef.current) return;
-
-    const timer = setTimeout(() => {
+    if (!isOpen) {
       if (leafletMapRef.current) {
-        leafletMapRef.current.invalidateSize();
-        handleFitBounds();
+        leafletMapRef.current.remove();
+        leafletMapRef.current = null;
+        tileLayerRef.current = null;
+        markersLayerRef.current = null;
+        polylineRef.current = null;
       }
-    }, 250);
-
-    return () => clearTimeout(timer);
+      setSelectedStopId(null);
+      setEditingAddressId(null);
+      setFeedbackMessage(null);
+    }
   }, [isOpen]);
 
   // Fit bounds to show ALL stops
@@ -102,6 +107,19 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
     }
   };
 
+  // Handle ResizeObserver & map invalidation on open and sidebar toggle
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const timer = setTimeout(() => {
+      if (leafletMapRef.current) {
+        leafletMapRef.current.invalidateSize();
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [isOpen, isSidebarOpen]);
+
   // Initialize and update Leaflet map inside modal
   useEffect(() => {
     if (!isOpen || !mapContainerRef.current) return;
@@ -124,6 +142,13 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
       tileLayerRef.current = tileLayer;
       markersLayerRef.current = L.layerGroup().addTo(map);
       leafletMapRef.current = map;
+
+      setTimeout(() => {
+        if (leafletMapRef.current) {
+          leafletMapRef.current.invalidateSize();
+          handleFitBounds();
+        }
+      }, 250);
     } else if (tileLayerRef.current) {
       tileLayerRef.current.setUrl(tileUrl);
     }
@@ -169,6 +194,7 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
 
       const isCompleted = stop.status === 'concluido';
       const isSelected = stop.id === selectedStopId;
+      const pkgCount = stop.packagesCount ?? (stop.packageNumbers?.length || 1);
 
       let bgColor = 'bg-blue-600';
       if (isCompleted) bgColor = 'bg-slate-500';
@@ -182,6 +208,7 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
                  <div class="w-9 h-9 ${bgColor} text-white font-black rounded-full border-2 border-white flex items-center justify-center shadow-xl text-xs transition-transform transform hover:scale-110">
                    ${idx + 1}
                  </div>
+                 ${pkgCount > 1 ? `<span class="absolute -top-1.5 -right-2 bg-amber-400 text-slate-950 font-black text-[9px] px-1 rounded-full border border-slate-900 shadow-xs">📦${pkgCount}</span>` : ''}
                </div>`,
         iconSize: [36, 36],
         iconAnchor: [18, 18],
@@ -190,16 +217,27 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
       const wazeUrl = getWazeUrl(stop.lat!, stop.lng!);
       const googleUrl = getGoogleMapsUrl(stop.lat!, stop.lng!, stop.address);
 
+      const packageHtml = stop.packageNumbers && stop.packageNumbers.length > 0
+        ? `<div class="p-1 bg-indigo-50 border border-indigo-200 rounded text-[10px] text-indigo-900 font-bold mb-1">
+             📦 <b>Pacotes:</b> ${stop.packageNumbers.join(', ')} (${pkgCount} volumes)
+           </div>`
+        : pkgCount > 1
+        ? `<div class="p-1 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-900 font-bold mb-1">
+             📦 <b>Volumes:</b> ${pkgCount} pacotes agrupados neste local
+           </div>`
+        : '';
+
       const popupHtml = `
         <div class="p-2 max-w-xs font-sans text-slate-900">
-          <div class="flex items-center gap-1.5 mb-1">
+          <div class="flex items-center justify-between gap-1.5 mb-1">
             <span class="px-2 py-0.5 bg-violet-600 text-white rounded font-bold text-xs">Parada ${idx + 1}</span>
             <span class="text-[10px] font-bold text-slate-500 uppercase">${stop.status}</span>
           </div>
           <p class="font-extrabold text-xs mb-1 text-slate-800 leading-snug">${stop.address}</p>
+          ${packageHtml}
           ${stop.customerName ? `<p class="text-xs text-slate-600 mb-1">👤 <b>${stop.customerName}</b></p>` : ''}
           <div class="p-1.5 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-900 font-bold mb-2">
-            📍 <b>Mover Parada:</b> Arraste este pino no mapa para ajustar as coordenadas exatas!
+            📍 <b>Mover Parada:</b> Arraste este pino no mapa para ajustar a posição!
           </div>
           <div class="flex gap-1">
             <a href="${wazeUrl}" target="_blank" rel="noopener" class="px-2 py-1 bg-cyan-600 text-white rounded font-bold text-xs no-underline flex-1 text-center">🚗 Waze</a>
@@ -253,6 +291,12 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
     setInlineAddressText(stop.address);
   };
 
+  const handleNativeShare = async () => {
+    const res = await shareRouteNative(routeName, stops, routeSummary);
+    setFeedbackMessage(res.message);
+    setTimeout(() => setFeedbackMessage(null), 4000);
+  };
+
   const handleSaveInlineAddress = async (stop: RouteStop) => {
     if (!inlineAddressText.trim()) return;
 
@@ -277,7 +321,6 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
         leafletMapRef.current.setView([res.lat, res.lng], 16);
       }
     } else {
-      // Preserve address string even if geocoding didn't find new exact coordinates
       const updated: RouteStop = {
         ...stop,
         address: inlineAddressText.trim(),
@@ -300,18 +343,30 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
           </div>
           <div>
             <h2 className="font-extrabold text-sm md:text-base text-white flex items-center gap-2">
-              <span>Mapa Completo das Paradas</span>
+              <span>Mapa Completo & Itinerário</span>
               <span className="px-2 py-0.5 bg-violet-600/30 text-violet-300 border border-violet-500/40 rounded-full text-xs font-bold">
                 {stops.length} {stops.length === 1 ? 'parada' : 'paradas'}
               </span>
             </h2>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              Vizualize todas as entregas, clique para editar endereços ou arraste os pinos para reposicionar no mapa.
+              Arraste os pinos para reposicionar ou edite os endereços diretamente no mapa.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Share Route Button */}
+          {stops.length > 0 && (
+            <button
+              onClick={handleNativeShare}
+              className="px-3 py-1.5 bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 hover:text-white border border-emerald-500/40 font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
+              title="Compartilhar rota via WhatsApp / Link nativo"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Compartilhar</span>
+            </button>
+          )}
+
           {/* Fit All Bounds Button */}
           <button
             onClick={handleFitBounds}
@@ -346,19 +401,30 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
             </button>
           )}
 
-          {/* Toggle Sidebar Panel */}
+          {/* Toggle Sidebar Panel in Navbar */}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`px-3 py-1.5 font-extrabold text-xs rounded-xl border transition-all ${
+            className={`px-3 py-1.5 font-extrabold text-xs rounded-xl border transition-all flex items-center gap-1.5 ${
               isSidebarOpen
                 ? 'bg-violet-600 text-white border-violet-500 shadow-xs'
                 : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
             }`}
+            title="Ocultar ou mostrar barra lateral para maximizar mapa"
           >
-            {isSidebarOpen ? 'Esconder Lista' : 'Mostrar Lista'}
+            {isSidebarOpen ? (
+              <>
+                <PanelLeftClose className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Ocultar Barra</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Expandir Lista</span>
+              </>
+            )}
           </button>
 
-          {/* Close Modal */}
+          {/* Close Modal with guaranteed safe reset */}
           <button
             onClick={onClose}
             className="p-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold transition-all shadow-md ml-1"
@@ -374,6 +440,27 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
         {/* Leaflet Map Canvas */}
         <div ref={mapContainerRef} className="w-full h-full z-10" />
 
+        {/* Floating Quick Toggle Button on the Map Canvas */}
+        <div className="absolute top-4 left-4 z-30">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="px-3 py-2 bg-slate-900/90 hover:bg-slate-800 text-white font-extrabold text-xs rounded-2xl shadow-2xl border border-slate-700 backdrop-blur-md flex items-center gap-2 transition-all hover:scale-105"
+            title={isSidebarOpen ? 'Ocultar barra para maximizar área do mapa' : 'Exibir lista de paradas'}
+          >
+            {isSidebarOpen ? (
+              <>
+                <PanelLeftClose className="w-4 h-4 text-violet-400" />
+                <span>Maximizar Mapa</span>
+              </>
+            ) : (
+              <>
+                <PanelLeftOpen className="w-4 h-4 text-emerald-400" />
+                <span>Ver Lista ({stops.length})</span>
+              </>
+            )}
+          </button>
+        </div>
+
         {/* Floating Toast Notification */}
         {feedbackMessage && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 max-w-md w-11/12 bg-slate-900/95 text-white border border-violet-500/50 p-3 rounded-2xl shadow-2xl backdrop-blur-md text-xs font-bold flex items-center gap-2 animate-bounce">
@@ -384,19 +471,27 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
 
         {/* Floating Side Drawer with Stops List & Inline Address Editing */}
         {isSidebarOpen && (
-          <div className="absolute top-4 left-4 bottom-4 z-20 w-80 max-w-[calc(100vw-32px)] bg-slate-900/95 border border-slate-800 rounded-3xl shadow-2xl backdrop-blur-md flex flex-col overflow-hidden text-xs">
+          <div className="absolute top-16 left-4 bottom-4 z-20 w-84 max-w-[calc(100vw-32px)] bg-slate-900/95 border border-slate-800 rounded-3xl shadow-2xl backdrop-blur-md flex flex-col overflow-hidden text-xs animate-slideRight">
             <div className="p-3 bg-slate-800/80 border-b border-slate-700/80 flex items-center justify-between">
               <span className="font-black text-slate-200 text-xs flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-violet-400" />
                 Itinerário de Paradas ({stops.length})
               </span>
-              <span className="text-[10px] text-slate-400 font-bold">Arraste os pinos para mover</span>
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-1 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-colors"
+                title="Fechar barra lateral"
+              >
+                <PanelLeftClose className="w-3.5 h-3.5" />
+              </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar">
               {stops.map((stop, idx) => {
                 const isSelected = stop.id === selectedStopId;
                 const isEditingThis = stop.id === editingAddressId;
+                const pkgCount = stop.packagesCount ?? (stop.packageNumbers?.length || 1);
+                const isMultiPackage = pkgCount > 1 || (stop.packageNumbers && stop.packageNumbers.length > 1);
 
                 return (
                   <div
@@ -414,7 +509,7 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
                           {idx + 1}
                         </span>
                         {stop.customerName && (
-                          <span className="font-extrabold text-slate-200 truncate max-w-[140px]">
+                          <span className="font-extrabold text-slate-200 truncate max-w-[130px]">
                             {stop.customerName}
                           </span>
                         )}
@@ -423,6 +518,30 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
                         {stop.status}
                       </span>
                     </div>
+
+                    {/* Package Numbers / Grouping Pills */}
+                    {isMultiPackage && (
+                      <div className="mb-1.5 px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                        <Boxes className="w-3 h-3 text-amber-400" />
+                        <span>{pkgCount} pacotes agrupados neste endereço</span>
+                      </div>
+                    )}
+
+                    {stop.packageNumbers && stop.packageNumbers.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1 mb-1.5">
+                        <span className="text-[10px] font-bold text-indigo-400 flex items-center gap-0.5">
+                          <Package className="w-3 h-3 text-indigo-400" />
+                        </span>
+                        {stop.packageNumbers.map((pkg, pIdx) => (
+                          <span
+                            key={pIdx}
+                            className="px-1.5 py-0.2 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded font-mono text-[9px] font-bold"
+                          >
+                            {pkg}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Address Text or Inline Edit Input */}
                     {isEditingThis ? (
@@ -507,3 +626,4 @@ export const FullMapModal: React.FC<FullMapModalProps> = ({
     </div>
   );
 };
+

@@ -81,11 +81,13 @@ export interface RouteStop {
   accumulatedDurationMin?: number; // Cumulative total duration from start up to this stop
   estimatedEta?: string; // Predicted time of arrival formatted (e.g. "09:45")
 
-  // Mockup 'Personalize' UI fields
+  // Mockup 'Personalize' UI fields & Package Metadata
   colorTag?: string; // 'Laranja' | 'Azul' | 'Verde' | 'Vermelho' | 'Roxo'
   gateCode?: string; // e.g. "1684" or "Código do portão"
   packageLocation?: string; // e.g. "Grande, Sacola, FDC"
-  packagesCount?: number; // default 1
+  packagesCount?: number; // default 1 or count of packages
+  packageNumbers?: string[]; // e.g. ["#100234", "#100235", "VOL-1"]
+  packageNumber?: string; // single string alias
   stopOrderType?: 'primeira' | 'automatica' | 'ultima'; // default 'automatica'
   serviceType?: 'entrega' | 'coleta'; // default 'entrega'
   arrivalTimeWindow?: string; // e.g. "Qualquer momento"
