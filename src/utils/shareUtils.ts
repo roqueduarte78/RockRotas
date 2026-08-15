@@ -152,3 +152,6 @@ export async function shareRouteNative(
   return shareRoute(stops, summary, routeName);
 }
 
+export const shareCurrentRoute = shareRoute;
+
+

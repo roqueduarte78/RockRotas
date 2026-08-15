@@ -33,6 +33,8 @@ import {
   Navigation,
   Package,
   Boxes,
+  Camera,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { RouteStop, RouteSummary, DriverLocation, GpsApp, MapThemeMode } from '../types';
 import {
@@ -85,6 +87,7 @@ interface SidebarProps {
   currentTimeFormatted?: string;
   scheduleStatusLabel?: string;
   isDarkModeMap?: boolean;
+  onViewProofPhoto?: (stop: RouteStop) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -119,6 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentTimeFormatted = '12:00',
   scheduleStatusLabel = '',
   isDarkModeMap = false,
+  onViewProofPhoto,
 }) => {
   const [addressInput, setAddressInput] = useState('');
   const [customerInput, setCustomerInput] = useState('');
@@ -837,6 +841,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="mb-2 p-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-[10px] text-amber-900 dark:text-amber-200 font-medium flex items-center gap-1.5">
                     <ShieldAlert className="w-3 h-3 text-amber-600 shrink-0" />
                     <span className="truncate">{stop.weather.alertText || 'Alerta de chuva/clima adverso'}</span>
+                  </div>
+                )}
+
+                {/* Proof of Delivery Photo Thumbnail Badge */}
+                {stop.deliveryProofPhoto && (
+                  <div className="mb-2 p-2 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-xl flex items-center justify-between gap-2 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => onViewProofPhoto?.(stop)}
+                      className="flex items-center gap-2 text-left min-w-0 flex-1 group"
+                      title="Clique para ver o comprovante em tamanho real"
+                    >
+                      <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-emerald-500/50 bg-black">
+                        <img
+                          src={stop.deliveryProofPhoto}
+                          alt="Comprovante de entrega"
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-extrabold text-[10px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
+                          <Camera className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                          <span>Comprovante Registrado</span>
+                        </span>
+                        <span className="text-[9px] text-slate-500 dark:text-slate-400 block truncate">
+                          {stop.deliveryProofTimestamp || 'Foto salva'}
+                          {stop.deliveryProofNotes ? ` • "${stop.deliveryProofNotes}"` : ''}
+                        </span>
+                      </div>
+                    </button>
                   </div>
                 )}
 

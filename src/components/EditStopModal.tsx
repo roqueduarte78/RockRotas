@@ -21,6 +21,9 @@ import {
   ChevronRight,
   HelpCircle,
   Tag,
+  Camera,
+  Trash2,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface EditStopModalProps {
@@ -65,6 +68,9 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
   const [serviceType, setServiceType] = useState<'entrega' | 'coleta'>('entrega');
   const [arrivalTimeWindow, setArrivalTimeWindow] = useState<string>('Qualquer momento');
   const [plannedDwellTimeMin, setPlannedDwellTimeMin] = useState<number>(5);
+  const [deliveryProofPhoto, setDeliveryProofPhoto] = useState<string | undefined>(undefined);
+  const [deliveryProofTimestamp, setDeliveryProofTimestamp] = useState<string | undefined>(undefined);
+  const [deliveryProofNotes, setDeliveryProofNotes] = useState<string | undefined>(undefined);
 
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [searchResults, setSearchResults] = useState<Array<{ address: string; lat: number; lng: number }>>([]);
@@ -91,6 +97,9 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
       setServiceType(stop.serviceType || 'entrega');
       setArrivalTimeWindow(stop.arrivalTimeWindow || 'Qualquer momento');
       setPlannedDwellTimeMin(stop.plannedDwellTimeMin ?? 5);
+      setDeliveryProofPhoto(stop.deliveryProofPhoto);
+      setDeliveryProofTimestamp(stop.deliveryProofTimestamp);
+      setDeliveryProofNotes(stop.deliveryProofNotes);
       setGeocodeMessage(null);
       setSearchResults([]);
     }
@@ -202,6 +211,9 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
       serviceType,
       arrivalTimeWindow,
       plannedDwellTimeMin,
+      deliveryProofPhoto,
+      deliveryProofTimestamp,
+      deliveryProofNotes,
     };
 
     onSave(updated);
@@ -424,6 +436,60 @@ export const EditStopModal: React.FC<EditStopModalProps> = ({
                 </select>
               </div>
             </div>
+          </div>
+
+          {/* Delivery Proof Photo Section */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
+                <Camera className="w-4 h-4 text-emerald-600" />
+                Comprovante de Entrega (Foto)
+              </span>
+              {deliveryProofPhoto && (
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  Foto Registrada
+                </span>
+              )}
+            </div>
+
+            {deliveryProofPhoto ? (
+              <div className="flex items-center gap-3 pt-1">
+                <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-300 bg-black shrink-0 shadow-xs">
+                  <img
+                    src={deliveryProofPhoto}
+                    alt="Comprovante"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className="text-[11px] font-bold text-slate-700 truncate">
+                    {deliveryProofTimestamp || 'Capturado no app'}
+                  </p>
+                  {deliveryProofNotes && (
+                    <p className="text-[10px] text-slate-500 italic truncate">
+                      "{deliveryProofNotes}"
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeliveryProofPhoto(undefined);
+                      setDeliveryProofTimestamp(undefined);
+                      setDeliveryProofNotes(undefined);
+                    }}
+                    className="text-[11px] text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Remover Foto</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 font-medium">
+                Nenhum comprovante fotográfico registrado ainda. A foto é solicitada automaticamente ao marcar a parada como concluída.
+              </p>
+            )}
           </div>
 
           {/* Extra Action List matching mockup */}

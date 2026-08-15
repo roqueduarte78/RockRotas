@@ -1,5 +1,117 @@
 import { RouteStop } from '../types';
 
+export interface FrequentLocation {
+  id: string;
+  lat: number;
+  lng: number;
+  label?: string;
+  visitsCount: number;
+  lastVisited: string;
+}
+
+const FREQUENT_LOCATIONS_KEY = 'ROTA_EXPRESS_FREQUENT_LOCATIONS';
+const LAST_WIFI_PRELOAD_KEY = 'ROTA_EXPRESS_LAST_WIFI_PRELOAD';
+
+/**
+ * Detect if the device is currently on a Wi-Fi or high-speed unmetered connection
+ */
+export function isWifiConnection(): boolean {
+  if (typeof window === 'undefined' || !navigator.onLine) return false;
+
+  const nav = navigator as any;
+  const connection = nav.connection || nav.mozConnection || nav.webkitConnection;
+
+  if (connection) {
+    // If Network Information API gives connection type:
+    if (connection.type === 'wifi' || connection.type === 'ethernet') {
+      return true;
+    }
+    // Check if user has data-saver enabled
+    if (connection.saveData === true) {
+      return false;
+    }
+    // High-speed cellular with no data-saver can also benefit
+    if (connection.effectiveType === '4g' && !connection.type) {
+      return true;
+    }
+    if (connection.type && connection.type !== 'cellular') {
+      return true;
+    }
+  }
+
+  // Fallback: If online and no explicit cellular restriction, assume broadband/wifi in desktop/web
+  return true;
+}
+
+/**
+ * Get all saved frequently visited delivery hubs and centers
+ */
+export function getFrequentLocations(): FrequentLocation[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem(FREQUENT_LOCATIONS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.sort((a, b) => b.visitsCount - a.visitsCount);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to load frequent locations:', e);
+  }
+  return [];
+}
+
+/**
+ * Record a location into the frequent areas database
+ */
+export function recordFrequentLocation(lat: number, lng: number, label?: string): void {
+  if (typeof window === 'undefined' || !lat || !lng) return;
+  try {
+    const locations = getFrequentLocations();
+    // Check if location is within ~1.5km of existing recorded hub
+    const existingIndex = locations.findIndex((item) => {
+      const dLat = Math.abs(item.lat - lat);
+      const dLng = Math.abs(item.lng - lng);
+      return dLat < 0.015 && dLng < 0.015;
+    });
+
+    if (existingIndex >= 0) {
+      locations[existingIndex].visitsCount += 1;
+      locations[existingIndex].lastVisited = new Date().toISOString();
+      if (label && !locations[existingIndex].label) {
+        locations[existingIndex].label = label;
+      }
+    } else {
+      locations.push({
+        id: `hub-${Date.now()}`,
+        lat,
+        lng,
+        label: label || `Ponto ${locations.length + 1}`,
+        visitsCount: 1,
+        lastVisited: new Date().toISOString(),
+      });
+    }
+
+    // Keep top 20 frequent locations
+    const trimmed = locations.sort((a, b) => b.visitsCount - a.visitsCount).slice(0, 20);
+    localStorage.setItem(FREQUENT_LOCATIONS_KEY, JSON.stringify(trimmed));
+  } catch (e) {
+    console.warn('Failed to save frequent location:', e);
+  }
+}
+
+/**
+ * Record all current route stops as visited locations
+ */
+export function recordRouteLocations(stops: RouteStop[]): void {
+  stops.forEach((s) => {
+    if (s.lat && s.lng) {
+      recordFrequentLocation(s.lat, s.lng, s.address);
+    }
+  });
+}
+
 // Convert Lat/Lng to OpenStreetMap tile coordinates (X, Y, Z)
 export function latLngToTileX(lat: number, lon: number, zoom: number): number {
   return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
@@ -12,21 +124,21 @@ export function latLngToTileY(lat: number, lon: number, zoom: number): number {
   );
 }
 
-// Generate tile URLs around all route stops for specified zoom levels
-export function getTileUrlsForStops(
-  stops: RouteStop[],
+// Generate tile URLs around all route stops and frequent hubs for specified zoom levels
+export function getTileUrlsForPoints(
+  points: Array<{ lat: number; lng: number }>,
   zooms = [13, 14, 15, 16],
   isDarkMode = false
 ): string[] {
-  const validStops = stops.filter((s) => s.lat !== undefined && s.lng !== undefined);
-  if (validStops.length === 0) return [];
+  const valid = points.filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number');
+  if (valid.length === 0) return [];
 
   const tileSet = new Set<string>();
 
   zooms.forEach((zoom) => {
-    validStops.forEach((stop) => {
-      const centerX = latLngToTileX(stop.lat!, stop.lng!, zoom);
-      const centerY = latLngToTileY(stop.lat!, stop.lng!, zoom);
+    valid.forEach((p) => {
+      const centerX = latLngToTileX(p.lat, p.lng, zoom);
+      const centerY = latLngToTileY(p.lat, p.lng, zoom);
 
       // Cache a 3x3 grid of tiles around each stop for smooth panning
       for (let dx = -1; dx <= 1; dx++) {
@@ -53,13 +165,35 @@ export function getTileUrlsForStops(
   return Array.from(tileSet);
 }
 
+// Generate tile URLs around all route stops for specified zoom levels
+export function getTileUrlsForStops(
+  stops: RouteStop[],
+  zooms = [13, 14, 15, 16],
+  isDarkMode = false
+): string[] {
+  const points = stops
+    .filter((s) => s.lat !== undefined && s.lng !== undefined)
+    .map((s) => ({ lat: s.lat!, lng: s.lng! }));
+  return getTileUrlsForPoints(points, zooms, isDarkMode);
+}
+
 // Preload map tiles into Service Worker Cache
 export async function preloadMapTilesForRoute(
   stops: RouteStop[],
   isDarkMode = false,
   onProgress?: (downloaded: number, total: number) => void
 ): Promise<{ success: boolean; cachedCount: number }> {
-  const tileUrls = getTileUrlsForStops(stops, [13, 14, 15, 16], isDarkMode);
+  // Combine route stops + top frequent hubs
+  const stopPoints = stops
+    .filter((s) => s.lat !== undefined && s.lng !== undefined)
+    .map((s) => ({ lat: s.lat!, lng: s.lng! }));
+
+  const frequentPoints = getFrequentLocations()
+    .slice(0, 8)
+    .map((f) => ({ lat: f.lat, lng: f.lng }));
+
+  const allPoints = [...stopPoints, ...frequentPoints];
+  const tileUrls = getTileUrlsForPoints(allPoints, [13, 14, 15, 16], isDarkMode);
   if (tileUrls.length === 0) return { success: false, cachedCount: 0 };
 
   const cacheName = 'rota-express-tiles-v1';
@@ -83,7 +217,7 @@ export async function preloadMapTilesForRoute(
               }
             }
           } catch (err) {
-            console.warn('Failed to fetch tile for cache:', url, err);
+            // Ignore individual tile fetch error
           } finally {
             downloaded++;
             if (onProgress) {
@@ -102,11 +236,57 @@ export async function preloadMapTilesForRoute(
       });
     }
 
+    // Record last sync timestamp
+    try {
+      localStorage.setItem(
+        LAST_WIFI_PRELOAD_KEY,
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          tileCount: tileUrls.length,
+        })
+      );
+    } catch {
+      // ignore
+    }
+
     return { success: true, cachedCount: tileUrls.length };
   } catch (err) {
     console.error('Error preloading map tiles:', err);
     return { success: false, cachedCount: downloaded };
   }
+}
+
+/**
+ * Automatically preload tiles when Wi-Fi is available
+ */
+export async function autoPreloadTilesOnWifi(
+  stops: RouteStop[],
+  isDarkMode = false
+): Promise<{ success: boolean; cachedCount: number; isWifi: boolean }> {
+  if (!isWifiConnection()) {
+    return { success: false, cachedCount: 0, isWifi: false };
+  }
+
+  // Record current route locations into frequent database
+  recordRouteLocations(stops);
+
+  // Check if we already preloaded in the last 30 minutes to avoid redundant downloads
+  try {
+    const last = localStorage.getItem(LAST_WIFI_PRELOAD_KEY);
+    if (last) {
+      const { timestamp } = JSON.parse(last);
+      const diffMs = Date.now() - new Date(timestamp).getTime();
+      if (diffMs < 30 * 60 * 1000) {
+        const count = await getCachedTileCount();
+        return { success: true, cachedCount: count, isWifi: true };
+      }
+    }
+  } catch {
+    // continue
+  }
+
+  const result = await preloadMapTilesForRoute(stops, isDarkMode);
+  return { ...result, isWifi: true };
 }
 
 // Get total cached tile items in storage

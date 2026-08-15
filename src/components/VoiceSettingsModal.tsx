@@ -229,12 +229,127 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
             </button>
           </div>
 
-          {/* Voice Personas Grid */}
+          {/* Primary Default Voice Selector: Feminino (Default) vs Masculino (PT-BR) */}
+          <div className="p-4 bg-gradient-to-r from-violet-600/10 via-indigo-600/10 to-pink-600/10 border-2 border-violet-500/40 rounded-2xl space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-violet-500" />
+                Voz Principal Padrão (Português do Brasil - PT-BR)
+              </h4>
+              <span className="text-[11px] font-bold text-violet-600 dark:text-violet-400 bg-violet-100 dark:bg-violet-950/80 px-2.5 py-0.5 rounded-full border border-violet-300 dark:border-violet-700">
+                Padrão Recomendado
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Selecione o gênero da voz padrão para anúncios e comandos de GPS:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Feminino Option (Default) */}
+              <div
+                onClick={() => handleSelectPersona('feminino')}
+                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                  config.persona === 'feminino'
+                    ? 'bg-gradient-to-r from-pink-500/15 to-violet-500/15 border-pink-500 ring-2 ring-pink-500/30 shadow-md'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-pink-300 dark:hover:border-pink-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl p-1.5 bg-pink-100 dark:bg-pink-950/60 rounded-xl border border-pink-200 dark:border-pink-800 shrink-0">
+                    👩‍💼
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-xs text-slate-900 dark:text-white">
+                        Voz Feminina (Padrão)
+                      </span>
+                      <span className="text-[9px] bg-pink-600 text-white font-extrabold px-1.5 py-0.2 rounded">
+                        PT-BR
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                      Clara, profissional e natural
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTestSample('feminino');
+                    }}
+                    className="p-2 rounded-xl bg-pink-100 hover:bg-pink-200 dark:bg-pink-900/60 dark:hover:bg-pink-900 text-pink-700 dark:text-pink-300 text-xs font-bold transition-all"
+                    title="Ouvir voz feminina"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                  </button>
+                  {config.persona === 'feminino' && (
+                    <div className="w-5 h-5 rounded-full bg-pink-600 text-white flex items-center justify-center shrink-0">
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Masculino Option */}
+              <div
+                onClick={() => handleSelectPersona('masculino')}
+                className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                  config.persona === 'masculino'
+                    ? 'bg-gradient-to-r from-blue-500/15 to-indigo-500/15 border-blue-500 ring-2 ring-blue-500/30 shadow-md'
+                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-700'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl p-1.5 bg-blue-100 dark:bg-blue-950/60 rounded-xl border border-blue-200 dark:border-blue-800 shrink-0">
+                    👨‍💼
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-black text-xs text-slate-900 dark:text-white">
+                        Voz Masculina
+                      </span>
+                      <span className="text-[9px] bg-blue-600 text-white font-extrabold px-1.5 py-0.2 rounded">
+                        PT-BR
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                      Firme, executiva e produtiva
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleTestSample('masculino');
+                    }}
+                    className="p-2 rounded-xl bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/60 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs font-bold transition-all"
+                    title="Ouvir voz masculina"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                  </button>
+                  {config.persona === 'masculino' && (
+                    <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+                      <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Voice Personas & Regional Dialects Grid (Optional) */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-violet-500" />
-                Escolha o Sotaque e Estilo da Voz:
+                Sotaques Regionais Opcionais do Brasil:
               </h4>
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 Ativo: <strong>{selectedPersonaInfo.name}</strong>
@@ -242,7 +357,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {VOICE_PERSONAS.map((p) => {
+              {VOICE_PERSONAS.filter((p) => p.id !== 'feminino' && p.id !== 'masculino').map((p) => {
                 const isSelected = config.persona === p.id;
                 const isPlaying = isPlayingPersona === p.id;
 

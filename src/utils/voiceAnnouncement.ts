@@ -276,6 +276,65 @@ export function formatStopCompletedPhrase(
 }
 
 /**
+ * Detect probable voice gender from voice name / attributes
+ */
+export function detectVoiceGender(voice: SpeechSynthesisVoice): 'feminino' | 'masculino' | 'desconhecido' {
+  const name = voice.name.toLowerCase();
+  if (
+    name.includes('female') ||
+    name.includes('maria') ||
+    name.includes('luciana') ||
+    name.includes('francisca') ||
+    name.includes('leticia') ||
+    name.includes('fernanda') ||
+    name.includes('heloisa') ||
+    name.includes('vitoria') ||
+    name.includes('mulher')
+  ) {
+    return 'feminino';
+  }
+  if (
+    name.includes('male') ||
+    name.includes('felipe') ||
+    name.includes('daniel') ||
+    name.includes('antonio') ||
+    name.includes('ricardo') ||
+    name.includes('luciano') ||
+    name.includes('homem')
+  ) {
+    return 'masculino';
+  }
+  return 'desconhecido';
+}
+
+/**
+ * Announce proximity to next stop discreetly
+ */
+export function speakProximityAnnouncement(
+  customerName?: string,
+  address?: string,
+  distanceMeters: number = 500
+): boolean {
+  const config = getSavedVoiceConfig();
+  if (!config.enabled) return false;
+
+  const cleanAddr = address ? address.split(',')[0].trim() : '';
+  const client = customerName ? customerName.trim() : '';
+
+  let message = `Atenção: a quinhentos metros da parada`;
+  if (client) {
+    message += ` de ${client}`;
+  } else if (cleanAddr) {
+    message += ` na ${cleanAddr}`;
+  }
+
+  return speakText(message, {
+    persona: config.persona,
+    pitch: config.persona === 'masculino' ? 0.88 : (config.persona === 'feminino' ? 1.05 : config.pitch),
+  });
+}
+
+/**
  * Web Speech API synthesizer core
  */
 export function speakText(
@@ -317,10 +376,18 @@ export function speakText(
     let selectedVoice = voices.find((v) => v.voiceURI === (options?.voiceURI || config.voiceURI));
 
     if (!selectedVoice) {
-      // Find Portuguese voice prioritizing pt-BR
-      const ptBrVoice = voices.find((v) => v.lang === 'pt-BR' || v.lang === 'pt_BR');
-      const ptVoice = voices.find((v) => v.lang.toLowerCase().startsWith('pt'));
-      selectedVoice = ptBrVoice || ptVoice;
+      // Find Portuguese voices prioritizing pt-BR
+      const ptBrVoices = voices.filter((v) => v.lang === 'pt-BR' || v.lang === 'pt_BR');
+      const anyPtVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('pt'));
+      const pool = ptBrVoices.length > 0 ? ptBrVoices : anyPtVoices;
+
+      if (personaId === 'masculino') {
+        selectedVoice = pool.find((v) => detectVoiceGender(v) === 'masculino') || pool[0];
+      } else if (personaId === 'feminino') {
+        selectedVoice = pool.find((v) => detectVoiceGender(v) === 'feminino') || pool[0];
+      } else {
+        selectedVoice = pool[0];
+      }
     }
 
     if (selectedVoice) {

@@ -1,6 +1,6 @@
 {
   "name": "Otimizador de Rotas Pro",
   "description": "Sistema de otimização de rotas em tempo real com mapas, navegação Waze e Google Maps, importação de planilhas e IA Gemini.",
-  "requestFramePermissions": ["geolocation"],
+  "requestFramePermissions": ["geolocation", "camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

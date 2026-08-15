@@ -25,6 +25,11 @@ import { RouteHistoryModal } from './components/RouteHistoryModal';
 import { FullMapModal } from './components/FullMapModal';
 import { QuickGuideModal } from './components/QuickGuideModal';
 import { VoiceSettingsModal } from './components/VoiceSettingsModal';
+import { DeliveryProofModal } from './components/DeliveryProofModal';
+import { ProofPhotoViewerModal } from './components/ProofPhotoViewerModal';
+import { VoiceCommandButton } from './components/VoiceCommandButton';
+import { useVoiceCommands } from './hooks/useVoiceCommands';
+import { shareCurrentRoute } from './utils/shareUtils';
 
 // Sample initial Brazilian delivery stops fallback
 const INITIAL_STOPS: RouteStop[] = [
@@ -196,6 +201,8 @@ export default function App() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isFullMapOpen, setIsFullMapOpen] = useState(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [proofModalStop, setProofModalStop] = useState<RouteStop | null>(null);
+  const [viewPhotoModalStop, setViewPhotoModalStop] = useState<RouteStop | null>(null);
   const [isQuickGuideOpen, setIsQuickGuideOpen] = useState<boolean>(() => {
     try {
       const hasSeen = localStorage.getItem('ROTA_EXPRESS_HAS_SEEN_GUIDE');
@@ -451,8 +458,12 @@ export default function App() {
     setSmartSuggestion(null);
   };
 
-  // Update stop status & calculate dwell time log
-  const handleUpdateStopStatus = (id: string, status: RouteStop['status']) => {
+  // Direct status update logic with optional delivery proof
+  const applyStopStatusUpdate = (
+    id: string,
+    status: RouteStop['status'],
+    proof?: { photo?: string; timestamp?: string; notes?: string }
+  ) => {
     const nowIso = new Date().toISOString();
 
     if (status === 'concluido') {
@@ -489,6 +500,9 @@ export default function App() {
             arrivedAt,
             completedAt,
             actualDwellTimeMin,
+            ...(proof?.photo ? { deliveryProofPhoto: proof.photo } : {}),
+            ...(proof?.timestamp ? { deliveryProofTimestamp: proof.timestamp } : {}),
+            ...(proof?.notes ? { deliveryProofNotes: proof.notes } : {}),
           };
         }
         return s;
@@ -496,6 +510,69 @@ export default function App() {
       return calculateRouteMetrics(updated);
     });
   };
+
+  // Trigger proof of delivery modal when marking a stop as 'concluido'
+  const handleUpdateStopStatus = (id: string, status: RouteStop['status']) => {
+    if (status === 'concluido') {
+      const target = stops.find((s) => s.id === id);
+      if (target) {
+        setProofModalStop(target);
+        return;
+      }
+    }
+    applyStopStatusUpdate(id, status);
+  };
+
+  // Proof confirmed by driver
+  const handleConfirmProof = (
+    stopId: string,
+    photoDataUrl: string,
+    timestamp: string,
+    notes?: string
+  ) => {
+    applyStopStatusUpdate(stopId, 'concluido', {
+      photo: photoDataUrl,
+      timestamp,
+      notes,
+    });
+    setProofModalStop(null);
+  };
+
+  // Driver skipped photo proof (mark completed directly)
+  const handleSkipProof = (stopId: string) => {
+    applyStopStatusUpdate(stopId, 'concluido');
+    setProofModalStop(null);
+  };
+
+  // Voice Command Web Speech Hook integration
+  const {
+    isListening,
+    transcript,
+    feedbackMessage,
+    isSupported: isVoiceSupported,
+    toggleListening,
+  } = useVoiceCommands({
+    stops,
+    onUpdateStatus: (stopId, status) => {
+      handleUpdateStopStatus(stopId, status);
+    },
+    onAddNote: (stopId, noteText) => {
+      setStops((prev) => {
+        const updated = prev.map((s) => {
+          if (s.id === stopId) {
+            const existing = s.notes ? s.notes.trim() : '';
+            const newNotes = existing ? `${existing} | ${noteText}` : noteText;
+            return { ...s, notes: newNotes };
+          }
+          return s;
+        });
+        return calculateRouteMetrics(updated);
+      });
+    },
+    onOptimizeRoute: handleOptimizeTSP,
+    onOpenMap: () => setIsFullMapOpen(true),
+    onShareRoute: () => shareCurrentRoute(stops, routeName, routeSummary),
+  });
 
   // Execute cancel route
   const executeCancelRoute = () => {
@@ -643,6 +720,7 @@ export default function App() {
           currentTimeFormatted={currentTimeFormatted}
           scheduleStatusLabel={scheduleStatusLabel}
           isDarkModeMap={isDarkModeMap}
+          onViewProofPhoto={(stop) => setViewPhotoModalStop(stop)}
         />
 
         {/* Map View Canvas */}
@@ -728,6 +806,31 @@ export default function App() {
       <VoiceSettingsModal
         isOpen={isVoiceModalOpen}
         onClose={() => setIsVoiceModalOpen(false)}
+      />
+
+      {/* Proof of Delivery Camera Capture Modal */}
+      <DeliveryProofModal
+        stop={proofModalStop}
+        isOpen={Boolean(proofModalStop)}
+        onClose={() => setProofModalStop(null)}
+        onConfirmProof={handleConfirmProof}
+        onSkipProof={handleSkipProof}
+      />
+
+      {/* Proof of Delivery Photo Viewer Modal */}
+      <ProofPhotoViewerModal
+        stop={viewPhotoModalStop}
+        isOpen={Boolean(viewPhotoModalStop)}
+        onClose={() => setViewPhotoModalStop(null)}
+      />
+
+      {/* Floating Voice Command Mic Button */}
+      <VoiceCommandButton
+        isListening={isListening}
+        transcript={transcript}
+        feedbackMessage={feedbackMessage}
+        isSupported={isVoiceSupported}
+        onToggleListening={toggleListening}
       />
 
       {/* Confirmation Modal for Cancel or New Route */}

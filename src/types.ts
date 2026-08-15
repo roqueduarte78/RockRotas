@@ -94,6 +94,11 @@ export interface RouteStop {
 
   // Live weather forecast info
   weather?: WeatherInfo;
+
+  // Delivery Proof Photo (local client storage / camera capture)
+  deliveryProofPhoto?: string; // Data URL / Base64 image
+  deliveryProofTimestamp?: string; // Formatted date and time of capture
+  deliveryProofNotes?: string; // Optional delivery signature or notes
 }
 
 export interface RouteSummary {
