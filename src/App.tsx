@@ -9,14 +9,17 @@ import {
   computeRouteSummary,
   calculateRouteMetrics,
   suggestNextStopWithGemini,
+  calculateHaversineDistanceKm,
 } from './utils/routeOptimizer';
-import { playDetourAlertSound, playCompletionSound } from './utils/audioAlerts';
+import { playDetourAlertSound, playCompletionSound, playProximityAlertSound } from './utils/audioAlerts';
 import { fetchStopWeather } from './utils/weather';
-import { speakNextStopAnnouncement } from './utils/voiceAnnouncement';
+import { speakNextStopAnnouncement, speakProximityAnnouncement } from './utils/voiceAnnouncement';
+import { autoPreloadTilesOnWifi, isWifiConnection } from './utils/tileCacheManager';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { MapView } from './components/MapView';
 import { RealtimeTracker } from './components/RealtimeTracker';
+import { DiscreteProximityAlert } from './components/DiscreteProximityAlert';
 import { GeminiModal } from './components/GeminiModal';
 import { ExcelImportModal } from './components/ExcelImportModal';
 import { GoogleKeyModal } from './components/GoogleKeyModal';
@@ -287,6 +290,104 @@ export default function App() {
       console.warn('Could not save nav mode preference:', err);
     }
   }, [isNavigationMode]);
+
+  // Discreet Proximity Alert State (<500m to next stop)
+  const [proximityAlert, setProximityAlert] = useState<{
+    stop: RouteStop;
+    distanceMeters: number;
+  } | null>(null);
+  const [proximityAlertedStops, setProximityAlertedStops] = useState<Record<string, boolean>>({});
+
+  // Active Geolocation Proximity Watcher (under 500 meters from next pending stop during active navigation)
+  useEffect(() => {
+    if (!isNavigationMode || !('geolocation' in navigator)) {
+      setProximityAlert(null);
+      return;
+    }
+
+    const pendingStops = stops.filter((s) => s.status === 'pendente' || s.status === 'em_transito');
+    const nextTarget = pendingStops[0] || null;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, speed, heading } = pos.coords;
+        const currentLoc: DriverLocation = {
+          lat: latitude,
+          lng: longitude,
+          speed,
+          heading,
+          updatedAt: new Date().toISOString(),
+        };
+        setDriverLocation(currentLoc);
+
+        if (nextTarget && nextTarget.lat && nextTarget.lng) {
+          const distKm = calculateHaversineDistanceKm(
+            latitude,
+            longitude,
+            nextTarget.lat,
+            nextTarget.lng
+          );
+          const distM = Math.round(distKm * 1000);
+
+          if (distKm <= 0.5 && !proximityAlertedStops[nextTarget.id]) {
+            setProximityAlertedStops((prev) => ({ ...prev, [nextTarget.id]: true }));
+            setProximityAlert({ stop: nextTarget, distanceMeters: distM });
+
+            // Play discreet proximity audio chime
+            playProximityAlertSound();
+
+            // Announce discreetly in PT-BR using Web Speech API
+            speakProximityAnnouncement(nextTarget.customerName, nextTarget.address, distM);
+          } else if (distKm <= 0.5) {
+            // Update real-time remaining distance in notification banner
+            setProximityAlert((prev) =>
+              prev && prev.stop.id === nextTarget.id ? { ...prev, distanceMeters: distM } : prev
+            );
+          } else if (distKm > 0.65) {
+            // Dismiss alert if vehicle moves away
+            setProximityAlert((prev) =>
+              prev && prev.stop.id === nextTarget.id ? null : prev
+            );
+          }
+        }
+      },
+      (err) => {
+        console.warn('Proximity geolocation watch warning:', err);
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 12000 }
+    );
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [isNavigationMode, stops, proximityAlertedStops]);
+
+  // Wi-Fi Offline Tile Preloader for route & frequently visited areas
+  useEffect(() => {
+    if (!isOnline) return;
+
+    const performWifiPreload = async () => {
+      try {
+        if (isWifiConnection()) {
+          await autoPreloadTilesOnWifi(stops, isDarkModeMap);
+        }
+      } catch (e) {
+        console.warn('Wi-Fi tile preloading error:', e);
+      }
+    };
+
+    performWifiPreload();
+
+    // Hook into network change event if available
+    const nav = navigator as any;
+    const connection = nav.connection || nav.mozConnection || nav.webkitConnection;
+    if (connection && connection.addEventListener) {
+      connection.addEventListener('change', performWifiPreload);
+      return () => {
+        connection.removeEventListener('change', performWifiPreload);
+      };
+    }
+  }, [isOnline, stops, isDarkModeMap]);
 
   const handleSaveGoogleKey = (key: string) => {
     setGoogleKey(key);
@@ -822,6 +923,16 @@ export default function App() {
         stop={viewPhotoModalStop}
         isOpen={Boolean(viewPhotoModalStop)}
         onClose={() => setViewPhotoModalStop(null)}
+      />
+
+      {/* Discrete Proximity Alert Floating Banner (<500m to Next Stop) */}
+      <DiscreteProximityAlert
+        stop={proximityAlert?.stop || null}
+        distanceMeters={proximityAlert?.distanceMeters || 500}
+        isOpen={Boolean(proximityAlert && isNavigationMode)}
+        onDismiss={() => setProximityAlert(null)}
+        onCompleteStop={(stopId) => handleUpdateStopStatus(stopId, 'concluido')}
+        preferredGpsApp={defaultGpsApp}
       />
 
       {/* Floating Voice Command Mic Button */}

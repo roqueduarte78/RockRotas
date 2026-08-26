@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus,
   MapPin,
@@ -712,23 +712,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
         ) : (
-          stops.map((stop, index) => {
-            const wazeUrl = stop.lat && stop.lng ? getWazeUrl(stop.lat, stop.lng) : '#';
-            const googleUrl = getGoogleMapsUrl(stop.lat!, stop.lng!, stop.address);
-            const defaultNavUrl = defaultGpsApp === 'waze' ? wazeUrl : googleUrl;
-            const isCompleted = stop.status === 'concluido';
+          <AnimatePresence initial={false} mode="popLayout">
+            {stops.map((stop, index) => {
+              const wazeUrl = stop.lat && stop.lng ? getWazeUrl(stop.lat, stop.lng) : '#';
+              const googleUrl = getGoogleMapsUrl(stop.lat!, stop.lng!, stop.address);
+              const defaultNavUrl = defaultGpsApp === 'waze' ? wazeUrl : googleUrl;
+              const isCompleted = stop.status === 'concluido';
 
-            return (
-              <motion.div
-                key={stop.id}
-                layout={enableLayoutAnimation ? true : false}
-                transition={{ type: 'spring', stiffness: 350, damping: 28 }}
-                className={`p-3 rounded-2xl border transition-all ${
-                  isCompleted
-                    ? 'bg-slate-50/70 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-70'
-                    : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 hover:border-violet-400 dark:hover:border-violet-500 shadow-2xs'
-                }`}
-              >
+              return (
+                <motion.div
+                  key={stop.id}
+                  layout={enableLayoutAnimation ? true : false}
+                  initial={{ opacity: 0, y: 22, scale: 0.98 }}
+                  animate={{
+                    opacity: isCompleted ? 0.72 : 1,
+                    y: 0,
+                    scale: 1,
+                  }}
+                  exit={{
+                    opacity: 0,
+                    y: -18,
+                    scale: 0.94,
+                    transition: { duration: 0.22, ease: 'easeIn' },
+                  }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 380,
+                    damping: 26,
+                    mass: 0.8,
+                  }}
+                  className={`p-3 rounded-2xl border transition-colors duration-300 ${
+                    isCompleted
+                      ? 'bg-slate-50/70 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-70'
+                      : 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700/80 hover:border-violet-400 dark:hover:border-violet-500 shadow-2xs'
+                  }`}
+                >
                 {/* Card Top Header */}
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <div className="flex items-center gap-2 min-w-0">
@@ -960,7 +978,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               </motion.div>
             );
-          })
+          })}
+          </AnimatePresence>
         )}
       </div>
     </div>
